@@ -50,18 +50,36 @@ function parseBody(req) {
 }
 
 // ── Multi-user state ────────────────────────────────────────
-const users = new Map(); // h5OpenId → { peers, windows, queues, sse }
+const users = new Map(); // h5OpenId → { peers, windows, sse, boardOpenId }
+let cloudOpenId = ""; // set after OB identity creation
+
+function deriveBoardOpenId(cloudId, uuid) {
+  return require('crypto').createHash('sha256').update(cloudOpenId + ':' + uuid).digest('hex');
+}
 
 function getUser(h5OpenId) {
-  if (!users.has(h5OpenId)) {
-    users.set(h5OpenId, {
+  // Bootstrapping: if user connects with UUID before openid is assigned,
+  // derive the openid and migrate to openid-based key.
+  let key = h5OpenId;
+  if (h5OpenId.length < 40 && cloudOpenId) {
+    const derived = deriveBoardOpenId(cloudOpenId, h5OpenId);
+    if (users.has(h5OpenId)) {
+      const existing = users.get(h5OpenId);
+      users.delete(h5OpenId);
+      if (!existing.boardOpenId) existing.boardOpenId = derived;
+      users.set(derived, existing);
+    }
+    key = derived;
+  }
+  if (!users.has(key)) {
+    users.set(key, {
       peers: {},
-      windows: new Map(),  // windowName → { lastBeat, cwd, status }
-      // All messaging via OB P2P — no HTTP queue needed
+      windows: new Map(),
       sse: new Set(),
+      boardOpenId: key,
     });
   }
-  return users.get(h5OpenId);
+  return users.get(key);
 }
 
 function getWindows(user) {
@@ -108,7 +126,7 @@ async function main() {
   const oceanbus = await import("oceanbus");
   const ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
   await ob.createIdentity();
-  const cloudOpenId = await ob.getAddress();
+  cloudOpenId = await ob.getAddress();
   log(`Cloud OB: ${cloudOpenId.slice(0, 8)}...`);
 
   // 2. OB listener — Agent ↔ Cloud message channel
@@ -218,6 +236,14 @@ async function main() {
         } else {
           return json(res, { error: "missing h5_openid. Create identity on H5 first." }, 400);
         }
+      }
+
+      // ── API: Board Address (per-user OB openid) ─────────────
+      if (req.method === "GET" && url.pathname === "/api/my-address") {
+        if (!user.boardOpenId) {
+          user.boardOpenId = deriveBoardOpenId(cloudOpenId, h5openid);
+        }
+        return json(res, { openid: user.boardOpenId });
       }
 
       // ── API: Peers ────────────────────────────────────────

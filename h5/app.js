@@ -25,13 +25,28 @@ function generateUUID() {
   });
 }
 
-function loadIdentity() {
-  let id = localStorage.getItem("ob-h5-openid");
-  if (!id) {
-    id = generateUUID();
-    localStorage.setItem("ob-h5-openid", id);
+async function loadIdentity() {
+  // Use OB openid if already assigned
+  let openid = localStorage.getItem("ob-board-openid");
+  if (openid) return openid;
+
+  // First visit: bootstrap with UUID, then upgrade to OB openid from Cloud
+  let uuid = localStorage.getItem("ob-h5-openid");
+  if (!uuid) {
+    uuid = generateUUID();
+    localStorage.setItem("ob-h5-openid", uuid);
   }
-  return id;
+
+  try {
+    const res = await fetch(G + "/api/my-address?h5_openid=" + uuid);
+    const data = await res.json();
+    if (data.openid) {
+      localStorage.setItem("ob-board-openid", data.openid);
+      return data.openid;
+    }
+  } catch { /* Cloud unreachable, fall back to UUID */ }
+
+  return uuid;
 }
 
 // ── Messages ──────────────────────────────────────────────────
@@ -91,7 +106,7 @@ async function api(path, opts = {}) {
 
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
-  myOpenId = loadIdentity();
+  myOpenId = await loadIdentity();
   $("sidebar-id").textContent = "ID: " + myOpenId.slice(0, 12) + "...";
   loadPersistedMessages();
   document.body.classList.remove("chat-open");
@@ -270,7 +285,7 @@ function renderMain() {
 // ── Pairing ─────────────────────────────────────────────────────
 async function startPairing() {
   // Ensure identity is loaded (defensive: button may be clicked before init completes)
-  if (!myOpenId) myOpenId = loadIdentity();
+  if (!myOpenId) myOpenId = await loadIdentity();
 
   $("pairing-modal").classList.remove("hidden");
   $("pairing-cmd").textContent = "加载中...";

@@ -348,6 +348,34 @@ Agent 运行 --peer <h5_openid>:
 - Cloud 的心跳超时（30s）可以自动标记离线，但不杀进程
 - 未来考虑 Agent PID 文件，让 Cloud 可检测僵尸窗口
 
----
+### 8.6 僵尸进程的三层根因 + 三层防御（2026-05-17）
 
-## 9. 与 wechat-cc 对比
+**现象**：H5 Board 发消息，Monitor 收不到。API 直接调用却能收到。重启 Cloud 后短暂可用，随即再次失效。
+
+**排查过程**：
+1. 怀疑 agent.ts 的 OB listener filter 太窄（只处理 `command`，不处理 `message`）→ 修复后仍未解决
+2. 怀疑 npx 缓存了旧版 oceanbus SDK → 检查后发现 v0.10.10 代码正确
+3. 用本地源码直跑 Agent → 测试消息到达，但用户从 Board 发的消息仍未到
+4. 检查进程列表 → 发现 **6 个 oceanbus 僵尸进程**同时运行
+
+**三层根因**：
+
+| 层次 | 根因 | 机制 |
+|------|------|------|
+| 1 | Monitor TaskStop 杀不死子进程 | `await new Promise(() => {})` 永久阻塞，shell 被杀后 node 变孤儿 |
+| 2 | 多实例共享同一 OB 身份 | 所有 Agent 读 `~/.oceanbus/credentials.json`，同一 openid。OB L0 投递时任一实例可消费，僵尸抢走消息 |
+| 3 | npx 缓存锁定旧版本 | `npx oceanbus@latest` 首次下载后不再更新，旧代码持续运行 |
+
+**三层防御**：
+
+| 层次 | 位置 | 机制 |
+|------|------|------|
+| L1 | CLAUDE.md 流程 H 步骤 6 | CC AI 每次启动前：`Get-Process node \| match oceanbus \| Stop-Process` + 清 npx 缓存 |
+| L2 | `start.ts` `killExistingInstances()` | Agent 启动时自动杀其他 oceanbus start 进程（同平台适配 Win/Mac/Linux） |
+| L3 | Cloud `server.js` 心跳超时 | 30s 无心跳 → 标记离线 → Board 隐藏（已有，无需改动） |
+
+**教训**：
+- 持久进程在 Monitor 内运行时，子进程生命周期必须显式管理。不能依赖 Monitor 自动清理
+- 共享资源（OB 身份、端口、PID 文件）必须做互斥检测。多实例不是"高可用"，是"互相干扰"
+- `npx` 缓存是双刃剑：加速启动但也锁定版本。对于频繁更新的 CLI，考虑用本地源码或加 `--no-cache` 标志
+- 排查"有时通有时不通"的问题，第一步查进程数（`ps \| grep` 或 `Get-Process`），不要先怀疑代码逻辑

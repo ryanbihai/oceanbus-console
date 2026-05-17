@@ -11,7 +11,11 @@
 
 ### 第一条：灯塔项目
 
-OceanBus Console 是 OceanBus 网络的应用灯塔。它必须**展示 OB 的核心能力**：
+OceanBus Console 是 OceanBus 网络的应用灯塔。它必须**使用 OB 的核心能力**
+
+严禁绕过OB，遇到问题，请参考\OceanBusDocs\test-new-oceanbus-api(1).js 
+
+严禁绕过OB SDK，遇到问题，请参考\OceanBusDocs\sdk-test-run-all.mjs
 
 | 能力 | 体现 |
 |------|------|
@@ -124,12 +128,10 @@ Agent 端：粘贴 → 回车 → 绑定完成
   ┌────┴─ HTTP/SSE ────────┴──── OB P2P ─────────────┴──┐
   │                                                      │
   │  入站 (H5 → CC):                                       │
-  │  H5 POST /api/send → Cloud OB send → Agent OB 监听    │
-  │                                          → stdout     │
+  │  H5→ 阿里云服务（OB sdk） → OB L0 → OB sdk → Agent OB monitor     │
   │                                                      │
   │  出站 (CC → H5):                                       │
-  │  Agent OB send → Cloud OB 监听 → SSE → H5             │
-  │  (CC AI 通过 Agent stdin 回复，不走 HTTP)              │
+  │  Agent → 阿里云服务监听 → SSE → H5             │
   │                                                      │
   │  窗口管理: OB send → Cloud OB 监听 → SSE → Board       │
   └──────────────────────────────────────────────────────┘
@@ -291,17 +293,3 @@ Agent 运行 --peer <h5_openid>:
 | CC 原生注入 OCEANUS_WINDOW_NAME | 提 CC feature request |
 
 ---
-
-## 8. 与 wechat-cc 对比
-
-| | wechat-cc | OceanBus Console |
-|---|:---:|:---:|
-| 微信集成 | iLink | ❌ 去掉 |
-| 二维码 | 7天过期 | ❌ 不需要 |
-| 路由表 | 动态维护 | ❌ 不需要 |
-| MCP 桥接 | 需要 | ❌ 不需要 |
-| Board/微信同步 | 复杂 | 单一 Board |
-| 绑定方式 | 4级发现链 | 复制粘贴命令 |
-| 用户登录 | 扫码 | 无需登录 |
-| 多用户 | 单用户 Gateway | 多用户单一 URL |
-| 小白友好 | 需要懂 OB/Gateway/路由 | 说"连接 OB"即可 |

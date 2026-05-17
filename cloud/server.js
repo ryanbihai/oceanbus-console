@@ -57,7 +57,7 @@ function getUser(h5OpenId) {
     users.set(h5OpenId, {
       peers: {},
       windows: new Map(),  // windowName → { lastBeat, cwd, status }
-      queues: {},          // windowName → [{action,text,from,time,...}]
+      // All messaging via OB P2P — no HTTP queue needed
       sse: new Set(),
     });
   }
@@ -103,15 +103,15 @@ function serveStatic(req, res) {
 async function main() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
 
-  // 1. Cloud OB identity (fresh each restart — like the SDK test)
+  // 1. Cloud OB identity (fresh each restart)
   log("Creating Cloud OB identity...");
   const oceanbus = await import("oceanbus");
   const ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
-  const reg = await ob.createIdentity();
+  await ob.createIdentity();
   const cloudOpenId = await ob.getAddress();
   log(`Cloud OB: ${cloudOpenId.slice(0, 8)}...`);
 
-  // 2. OB listener — Agent ↔ Cloud real-time message channel
+  // 2. OB listener — Agent ↔ Cloud message channel
   ob.startListening(async (msg) => {
     if (msg.from_openid === cloudOpenId) return;
     let parsed;
@@ -121,47 +121,37 @@ async function main() {
     const user = h5openid ? getUser(h5openid) : null;
     if (!user) return;
 
-    switch (action) {
-      case "window-open": {
-        const win = parsed.window || "";
-        if (win) {
-          user.windows.set(win, { lastBeat: Date.now(), cwd: parsed.cwd || "", status: "online" });
-          if (parsed.agent_openid) {
-            const peerName = parsed.agent_name || win;
-            user.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
-            sseBroadcastForUser(user, "bound", { agent: peerName, openid: parsed.agent_openid });
-          }
-          sseBroadcastForUser(user, "windows", getWindows(user));
-          log(`[ob] window + ${win}`);
+    if (action === "window-open") {
+      const win = parsed.window || "";
+      if (win) {
+        user.windows.set(win, { lastBeat: Date.now(), cwd: parsed.cwd || "", status: "online" });
+        if (parsed.agent_openid) {
+          const peerName = parsed.agent_name || win;
+          user.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
+          sseBroadcastForUser(user, "bound", { agent: peerName, openid: parsed.agent_openid });
         }
-        break;
-      }
-      case "heartbeat": {
-        const win = parsed.window || "";
-        const newName = parsed.newname;
-        if (newName && newName !== win && user.windows.has(win) && !user.windows.has(newName)) {
-          user.windows.set(newName, { ...user.windows.get(win), lastBeat: Date.now(), status: "online" });
-          user.windows.delete(win);
-        } else if (user.windows.has(win)) {
-          user.windows.get(win).lastBeat = Date.now();
-          user.windows.get(win).status = "online";
-        }
-        break;
-      }
-      case "window-close": {
-        user.windows.delete(parsed.window || "");
         sseBroadcastForUser(user, "windows", getWindows(user));
-        break;
+        log(`[ob] window + ${win}`);
       }
-      case "message":
-      case "reply": {
-        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        sseBroadcastForUser(user, "message", {
-          window: parsed.window || "", text: parsed.text || "",
-          from: "agent", time, msg_id: parsed.msg_id || "",
-        });
-        break;
+    } else if (action === "heartbeat") {
+      const win = parsed.window || "";
+      const newName = parsed.newname;
+      if (newName && newName !== win && user.windows.has(win) && !user.windows.has(newName)) {
+        user.windows.set(newName, { ...user.windows.get(win), lastBeat: Date.now(), status: "online" });
+        user.windows.delete(win);
+      } else if (user.windows.has(win)) {
+        user.windows.get(win).lastBeat = Date.now();
+        user.windows.get(win).status = "online";
       }
+    } else if (action === "window-close") {
+      user.windows.delete(parsed.window || "");
+      sseBroadcastForUser(user, "windows", getWindows(user));
+    } else if (action === "message" || action === "reply") {
+      const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+      sseBroadcastForUser(user, "message", {
+        window: parsed.window || "", text: parsed.text || "",
+        from: "agent", time, msg_id: parsed.msg_id || "",
+      });
     }
   });
   log("OB listener started");
@@ -240,32 +230,27 @@ async function main() {
         return json(res, getWindows(user));
       }
 
-      // ── API: Send (H5 → Agent) ────────────────────────────
+      // ── API: Send (H5 → Agent via OB) ──────────────────────
       if (req.method === "POST" && url.pathname === "/api/send") {
         const { window: win, text } = body;
         if (!text) return json(res, { error: "missing text" }, 400);
 
-        // Find first bound agent
+        // Find first bound agent → OB send
         const peerNames = Object.keys(user.peers);
         if (peerNames.length === 0) return json(res, { error: "no bound agent" }, 400);
         const peer = user.peers[peerNames[0]];
 
         const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        const msgObj = { action: "message", window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" };
+        const msgObj = { action: "message", window: win || "", text, from: "h5", time, msg_id: body.msg_id || "", h5_openid: h5openid };
 
-        // Queue for Agent polling
-        const qk = win || "__default";
-        if (!user.queues[qk]) user.queues[qk] = [];
-        user.queues[qk].push(msgObj);
-
-        // Try OB send
-        ob.send(peer.openid, JSON.stringify(msgObj)).catch(() => {});
+        // OB send — the only message path
+        ob.send(peer.openid, JSON.stringify(msgObj)).catch((e) => log(`OB send failed: ${e.message}`));
 
         sseBroadcastForUser(user, "message", { window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" });
         return json(res, { ok: true });
       }
 
-      // ── API: Reply (CC AI → H5) ───────────────────────────
+      // ── API: Reply (CC AI → H5, transitional) ─────────────
       if (req.method === "POST" && url.pathname === "/api/reply") {
         const { window: win, text } = body;
         if (!text) return json(res, { error: "missing text" }, 400);
@@ -273,54 +258,6 @@ async function main() {
         sseBroadcastForUser(user, "message", { window: win || "", text, from: "agent", time, msg_id: body.msg_id || "" });
         log(`[reply] → H5 [${win}] ${text.slice(0, 40)}`);
         return json(res, { ok: true });
-      }
-
-      // ── API: Poll (Agent → Cloud) ─────────────────────────
-      if (req.method === "GET" && url.pathname === "/api/poll") {
-        const win = url.searchParams.get("window") || "__default";
-        const queue = user.queues[win] || [];
-        const batch = queue.splice(0);
-        return json(res, { messages: batch });
-      }
-
-      // ── API: Agent announce ────────────────────────────────
-      if (req.method === "POST" && url.pathname === "/api/agent/announce") {
-        const action = body.action;
-        const win = body.window || "";
-
-        if (action === "window-open" && win) {
-          user.windows.set(win, { lastBeat: Date.now(), cwd: body.cwd || "", status: "online" });
-          if (body.agent_openid) {
-            const peerName = body.agent_name || win;
-            user.peers[peerName] = { openid: body.agent_openid, boundAt: new Date().toISOString() };
-            sseBroadcastForUser(user, "bound", { agent: peerName, openid: body.agent_openid });
-          }
-          log(`[window] + ${win}`);
-          sseBroadcastForUser(user, "windows", getWindows(user));
-          return json(res, { ok: true, action: "window-open" });
-        }
-
-        if (action === "heartbeat" && win) {
-          const newName = body.newname;
-          if (newName && newName !== win && user.windows.has(win) && !user.windows.has(newName)) {
-            user.windows.set(newName, { ...user.windows.get(win), lastBeat: Date.now(), status: "online" });
-            user.windows.delete(win);
-            log(`[window] renamed ${win} → ${newName}`);
-          } else if (user.windows.has(win)) {
-            user.windows.get(win).lastBeat = Date.now();
-            user.windows.get(win).status = "online";
-          }
-          sseBroadcastForUser(user, "windows", getWindows(user));
-          return json(res, { ok: true, action: "heartbeat" });
-        }
-
-        if (action === "window-close" && win) {
-          user.windows.delete(win);
-          sseBroadcastForUser(user, "windows", getWindows(user));
-          return json(res, { ok: true, action: "window-close" });
-        }
-
-        return json(res, { error: "unknown action" }, 400);
       }
 
       // ── Static ─────────────────────────────────────────────

@@ -190,13 +190,19 @@ async function main() {
         return json(res, { openid: creds.openid });
       }
 
+      // Static files don't need user context
+      if (!user && !url.pathname.startsWith("/api/")) {
+        serveStatic(req, res);
+        return;
+      }
+
       if (!user) {
-        // Some endpoints don't need user context
+        // API endpoints that don't need user context
         if (req.method === "GET" && (url.pathname === "/api/status" || url.pathname === "/api/identity")) {
-          // already handled above
+          // continue below
+        } else {
+          return json(res, { error: "missing h5_openid. Create identity on H5 first." }, 400);
         }
-        // For all others, return helpful error
-        return json(res, { error: "missing h5_openid. Create identity on H5 first." }, 400);
       }
 
       // ── API: Peers ────────────────────────────────────────

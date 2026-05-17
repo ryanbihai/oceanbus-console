@@ -33,6 +33,8 @@ body{
   display: flex; height: 100vh; overflow: hidden;
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 /* ── Mobile-first: sidebar overlay ───────────────────────── */
@@ -80,10 +82,12 @@ body{
   background: linear-gradient(135deg, var(--primary-glow), var(--accent-glow));
   border-left: 3px solid var(--primary);
 }
-.window-status{width: 8px;height: 8px;border-radius: 50%;flex-shrink: 0; transition: background .3s}
+.window-status{width: 8px;height: 8px;border-radius: 50%;flex-shrink: 0; transition: background .3s; align-self: flex-start; margin-top: 4px}
 .ws-online{background: var(--success); box-shadow: 0 0 6px var(--success)}
 .ws-offline{background: var(--text-dim)}
-.window-name{flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500}
+.window-info{flex:1; min-width:0; display:flex; flex-direction:column; gap:2px}
+.window-name{overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500}
+.window-lastmsg{font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; line-height: 1.3}
 .window-cwd{font-size: 10px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100px}
 .agent-name{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight: 500}
 
@@ -101,10 +105,18 @@ body{
 .menu-btn{
   width: 36px; height: 36px; border-radius: var(--radius-sm);
   border: 1px solid var(--border); background: transparent; color: var(--text);
-  font-size: 18px; cursor: pointer; display: flex; align-items: center;
+  font-size: 18px; cursor: pointer; display: none; align-items: center;
   justify-content: center; flex-shrink: 0; transition: background .15s;
 }
 .menu-btn:hover{background: var(--bg-hover)}
+.back-btn{
+  width: 36px; height: 36px; border-radius: 50%;
+  border: none; background: transparent; color: var(--text);
+  font-size: 22px; cursor: pointer; display: none; align-items: center;
+  justify-content: center; flex-shrink: 0; transition: background .15s;
+  line-height: 1;
+}
+.back-btn:hover{background: var(--bg-hover)}
 
 #msg-container{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .messages{
@@ -229,40 +241,86 @@ body{
   display: none; position: fixed; inset: 0; z-index: 49;
   background: rgba(0,0,0,.4); backdrop-filter: blur(2px);
 }
-.sidebar.open + .sidebar-backdrop{display: block}
-@media (min-width: 768px) {
+
+/* ── Mobile: IM-style two-page swap (≤768px) ────────────── */
+@media (max-width: 768px) {
+  /* Conversation list = sidebar, full screen */
+  .sidebar{
+    position: fixed; inset: 0;
+    max-width: 100vw; width: 100%;
+    transform: none;
+    z-index: 10;
+    border-right: none;
+    box-shadow: none;
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+  }
+  body.chat-open .sidebar{
+    transform: translateX(-100%);
+  }
+
+  /* Chat view = main, full screen, slides in */
+  .main{
+    position: fixed; inset: 0;
+    z-index: 20;
+    display: none;
+    background: var(--bg-deep);
+  }
+  body.chat-open .main{ display: flex }
+
+  /* No overlay backdrop needed (page swap, not hamburger overlay) */
+  .sidebar-backdrop{ display: none!important }
+  .sidebar.open + .sidebar-backdrop{ display: none }
+
+  /* Navigation buttons */
+  body.chat-open .back-btn{ display: flex }
+  .menu-btn{ display: none!important }
+
+  /* Chat header */
+  .main-header{ padding: 10px 12px; gap: 8px }
+  .main-header .title{ font-size: 15px }
+
+  /* Messages */
+  .msg{ max-width: 85%; font-size: 15px; padding: 10px 14px }
+  .messages{ padding: 12px 10px; gap: 8px }
+
+  /* Input bar — safe area aware */
+  .input-bar{
+    padding: 8px 10px;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom));
+    gap: 6px;
+  }
+  .input-bar input{ font-size: 16px; padding: 10px 14px }
+  .input-bar button{ padding: 10px 16px; font-size: 14px }
+
+  /* Conversation list — larger touch targets */
+  .window-item{ padding: 12px 14px }
+  .window-name{ font-size: 15px }
+  .window-lastmsg{ font-size: 12px }
+  .window-status{ margin-top: 5px }
+
+  /* Sidebar sections */
+  .sidebar-header{ padding: 14px 14px }
+  .section{ padding: 10px 14px }
+
+  /* Modal */
+  .modal{ padding: 20px; max-width: 94% }
+  .modal h3{ font-size: 16px }
+  .modal .cmd{ font-size: 11px; padding: 10px 12px }
+
+  /* Toast above input bar */
+  .toast{ bottom: 80px; font-size: 12px }
+}
+
+/* ── Desktop split-pane (≥769px) ──────────────────────── */
+@media (min-width: 769px) {
   .sidebar{
     position: relative; transform: none; max-width: 280px;
     border-right: 1px solid var(--border); box-shadow: none;
   }
-  .sidebar-backdrop{display: none!important}
-  .menu-btn{display: none}
-}
-
-/* ── Mobile optimization (≤768px) ─────────────────── */
-@media (max-width: 768px) {
-  body{font-size: 14px}
-  .sidebar{
-    max-width: 100vw;
-    border-right: none;
-  }
-  .main-header{padding: 10px 12px; gap: 8px}
-  .main-header .title{font-size: 14px}
-  .menu-btn{display: flex}
-  .msg{max-width: 88%; font-size: 15px; padding: 10px 14px}
-  .messages{padding: 10px 8px; gap: 6px}
-  .input-bar{padding: 8px 10px; gap: 6px}
-  .input-bar input{font-size: 15px; padding: 10px 14px}
-  .input-bar button{padding: 10px 16px; font-size: 14px}
-  .modal{padding: 20px; max-width: 94%}
-  .modal h3{font-size: 16px}
-  .modal .cmd{font-size: 11px; padding: 10px 12px}
-  .toast{bottom: 80px; font-size: 12px}
-}
-
-/* ── Desktop (≥769px) ──────────────────────────────── */
-@media (min-width: 769px) {
-  .msg{max-width: 60%}
+  .sidebar-backdrop{ display: none!important }
+  .back-btn{ display: none!important }
+  .menu-btn{ display: none!important }
+  .msg{ max-width: 60% }
 }
 
 .hidden{display:none!important}

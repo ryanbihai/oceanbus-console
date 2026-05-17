@@ -22,6 +22,47 @@ function loadIdentity() {
   return id;
 }
 
+// ── Messages ──────────────────────────────────────────────────
+const messageStore = {}; // windowName → [{from, text, time, id}]
+const seenMsgIds = new Set();
+let msgIdCtr = 0;
+
+// ── Message Persistence (localStorage) ────────────────────────
+const MSG_PREFIX = "ob-msgs-";
+const MSG_KEYS_KEY = "ob-msg-keys";
+const MAX_MSGS = 500;
+
+function persistMessages(win) {
+  const msgs = messageStore[win] || [];
+  try {
+    localStorage.setItem(MSG_PREFIX + win, JSON.stringify(msgs));
+    const keys = JSON.parse(localStorage.getItem(MSG_KEYS_KEY) || "[]");
+    if (!keys.includes(win)) {
+      keys.push(win);
+      localStorage.setItem(MSG_KEYS_KEY, JSON.stringify(keys));
+    }
+  } catch {
+    if (msgs.length > 100) {
+      messageStore[win] = msgs.slice(-100);
+      try { localStorage.setItem(MSG_PREFIX + win, JSON.stringify(messageStore[win])); } catch {}
+    }
+  }
+}
+
+function loadPersistedMessages() {
+  try {
+    const keys = JSON.parse(localStorage.getItem(MSG_KEYS_KEY) || "[]");
+    keys.forEach(win => {
+      const raw = localStorage.getItem(MSG_PREFIX + win);
+      if (raw) {
+        const msgs = JSON.parse(raw);
+        messageStore[win] = msgs.slice(-MAX_MSGS);
+        msgs.forEach(m => { if (m.id) seenMsgIds.add(m.id); });
+      }
+    });
+  } catch {}
+}
+
 // ── Shortcuts ─────────────────────────────────────────────────
 function $(id) { return document.getElementById(id); }
 function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("show"); setTimeout(() => e.classList.remove("show"), 2500); }
@@ -39,6 +80,8 @@ async function api(path, opts = {}) {
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
   myOpenId = loadIdentity();
+  loadPersistedMessages();
+  document.body.classList.remove("chat-open");
   console.log("H5 identity:", myOpenId.slice(0, 8) + "...");
 
   // SSE with user context
@@ -69,6 +112,15 @@ async function loadWindows() {
   try { windows = await api("/api/windows"); } catch { windows = []; }
 }
 
+function lastMsgPreview(win) {
+  const msgs = messageStore[win];
+  if (!msgs || msgs.length === 0) return "";
+  const m = msgs[msgs.length - 1];
+  const prefix = m.from === "h5" ? "你: " : "";
+  const txt = prefix + m.text;
+  return txt.length > 30 ? txt.slice(0, 30) + "..." : txt;
+}
+
 function renderWindows() {
   const list = $("window-list");
   const online = windows.filter(w => w.status === "online");
@@ -80,13 +132,21 @@ function renderWindows() {
   }
 
   list.innerHTML = [
-    ...online.map(w => `<div class="window-item${activeWindow===w.name?' active':''}" onclick="selectWindow('${w.name}')">
-      <span class="window-status ws-online"></span>
-      <span class="window-name">${esc(w.name)}</span>
-    </div>`),
+    ...online.map(w => {
+      const preview = lastMsgPreview(w.name);
+      return `<div class="window-item${activeWindow===w.name?' active':''}" onclick="selectWindow('${w.name}')">
+        <span class="window-status ws-online"></span>
+        <div class="window-info">
+          <span class="window-name">${esc(w.name)}</span>
+          ${preview ? `<span class="window-lastmsg">${esc(preview)}</span>` : ""}
+        </div>
+      </div>`;
+    }),
     ...offline.map(w => `<div class="window-item" onclick="toast('${esc(w.name)} 已离线')">
       <span class="window-status ws-offline"></span>
-      <span class="window-name" style="color:#64748b">${esc(w.name)}</span>
+      <div class="window-info">
+        <span class="window-name" style="color:#64748b">${esc(w.name)}</span>
+      </div>
     </div>`),
   ].join("");
 }
@@ -110,15 +170,18 @@ function renderPeers() {
 
 function selectWindow(name) {
   activeWindow = name;
+  if (name) document.body.classList.add("chat-open");
   renderWindows();
   renderMain();
-  loadMessages(name);
+  if (name) loadMessages(name);
 }
 
-// ── Messages ──────────────────────────────────────────────────
-const messageStore = {}; // windowName → [{from, text, time, id}]
-const seenMsgIds = new Set();
-let msgIdCtr = 0;
+function goBack() {
+  activeWindow = null;
+  document.body.classList.remove("chat-open");
+  renderWindows();
+  renderMain();
+}
 
 function onMsg(data) {
   if (data.msg_id && seenMsgIds.has(data.msg_id)) return;
@@ -128,16 +191,19 @@ function onMsg(data) {
   if (!messageStore[win]) messageStore[win] = [];
   const mid = data.msg_id || ("sse_" + (++msgIdCtr));
   messageStore[win].push({ from: data.from, text: data.text, time: data.time || now(), id: mid });
+  persistMessages(win);
 
   if (activeWindow === win) {
     addBubble(data.from === "h5" ? "h5" : "agent", data.text, data.time, mid);
   }
   if (!activeWindow && win) {
     activeWindow = win;
+    document.body.classList.add("chat-open");
     renderWindows();
     renderMain();
     loadMessages(win);
   }
+  renderWindows();
 }
 
 async function loadMessages(win) {
@@ -175,6 +241,11 @@ async function sendMsg() {
   seenMsgIds.add(mid);
   addBubble("h5", text, now(), mid);
 
+  if (!messageStore[activeWindow]) messageStore[activeWindow] = [];
+  messageStore[activeWindow].push({ from: "h5", text, time: now(), id: mid });
+  persistMessages(activeWindow);
+  renderWindows();
+
   try {
     await api("/api/send", {
       method: "POST",
@@ -188,14 +259,16 @@ async function sendMsg() {
 function renderMain() {
   if (activeWindow) {
     $("input-bar").classList.remove("hidden");
-    $("main-header").innerHTML = `<button class="menu-btn" onclick="toggleSidebar()">☰</button>
+    $("main-header").innerHTML = `<button class="back-btn" onclick="goBack()">←</button>
+      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
       <span style="font-size:20px">💬</span><div>
       <div class="title">${esc(activeWindow)}</div><div class="meta">已连接</div></div>`;
     $("msg-container").innerHTML = '<div class="messages" id="messages"></div>';
     loadMessages(activeWindow);
   } else {
     $("input-bar").classList.add("hidden");
-    $("main-header").innerHTML = `<button class="menu-btn" onclick="toggleSidebar()">☰</button>
+    $("main-header").innerHTML = `<button class="back-btn" onclick="goBack()">←</button>
+      <button class="menu-btn" onclick="toggleSidebar()">☰</button>
       <span style="font-size:24px">📡</span><div>
       <div class="title">OceanBus Console</div><div class="meta">选择一个窗口开始对话</div></div>`;
     $("msg-container").innerHTML = '<div class="placeholder">点击左侧窗口或绑定 Agent</div>';

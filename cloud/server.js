@@ -318,9 +318,18 @@ async function main() {
           sseBroadcast("windows", getWindows());
           return json(res, { ok: true, action: "window-open" });
         }
-        if (action === "heartbeat" && win && windows.has(win)) {
-          windows.get(win).lastBeat = Date.now();
-          windows.get(win).status = "online";
+        if (action === "heartbeat" && win) {
+          const newName = body.newname || win;
+          if (newName !== win && windows.has(win) && !windows.has(newName)) {
+            // Window renamed: move entry
+            windows.set(newName, { ...windows.get(win), lastBeat: Date.now(), status: "online" });
+            windows.delete(win);
+            log(`[window] renamed ${win} → ${newName}`);
+          } else if (windows.has(win)) {
+            windows.get(win).lastBeat = Date.now();
+            windows.get(win).status = "online";
+          }
+          sseBroadcast("windows", getWindows());
           return json(res, { ok: true, action: "heartbeat" });
         }
         if (action === "window-close" && win) {

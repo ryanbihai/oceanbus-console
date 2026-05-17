@@ -58,7 +58,7 @@ function renderWindows() {
   const offline = windows.filter(w => w.status !== "online");
 
   if (online.length === 0 && offline.length === 0) {
-    list.innerHTML = '<div class="note">暂无窗口。在 CC 中运行 npx oceanbus start</div>';
+    list.innerHTML = '<div class="note">暂无窗口。在 CC 中运行 npx oceanbus@latest start</div>';
     return;
   }
 
@@ -196,7 +196,7 @@ async function startPairing() {
 
   try {
     const id = await api("/api/identity");
-    $("pairing-cmd").textContent = `npx oceanbus start --peer ${id.openid}`;
+    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${id.openid}`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

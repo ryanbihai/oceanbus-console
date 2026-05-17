@@ -62,58 +62,36 @@ Agent 端：粘贴 → 回车 → 绑定完成
 ### 1.5 出入站链路
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│                        OceanBus L0 (身份 + 寻址)                       │
-│                                                                      │
-│  H5 (手机)                Cloud                      Agent (PC)       │
-│  ─────────              ────────                    ──────────        │
-│  UUID 身份              OB 身份                     OB 身份           │
-│       │                    │                           │              │
-│       │ POST /api/send     │                           │              │
-│       ├───────────────────→│   messageQueues           │              │
-│       │                    │        ↓                  │              │
-│       │                    │   GET /api/poll ←─────────┤ (每2秒)      │
-│       │                    │        ↓                  │              │
-│       │                    │   消息出队                  │ stdout       │
-│       │                    │                           ├──→ Monitor   │
-│       │                    │                           │   → CC 会话   │
-│       │                    │                           │              │
-│       │                    │   POST /api/reply ←───────┤ CC AI        │
-│       │                    │        ↓                  │              │
-│       │ ←── SSE ──────────┤   SSE broadcast            │              │
-│       │                    │                           │              │
-│       │                    │   POST /api/announce ←────┤ (窗口管理)    │
-│       │                    │   {window-open,            │              │
-│       │                    │    heartbeat,              │              │
-│       │                    │    window-close}           │              │
-└──────────────────────────────────────────────────────────────────────┘
-
-传输层: HTTP (JSON) — 浏览器无法直连 OB P2P，Cloud 作中继
-身份层: OceanBus L0 — Agent 和 Cloud 各自拥有 OB 身份，H5 用 UUID
+  H5 (手机)                Cloud                      Agent (PC)
+  ─────────              ────────                    ──────────
+  UUID 身份              OB 身份 (P2P)               OB 身份 (P2P)
+                         OB listener                 
+       │                    │                           │
+       │                    │                           │
+  ┌────┴─ HTTP/SSE ────────┴─ OB P2P ─────────────────┴──┐
+  │                                                       │
+  │  入站 (H5 → CC):                                       │
+  │  H5 POST /api/send → Cloud queue → Agent /api/poll    │
+  │         (或: OB send → Cloud OB listener → SSE → H5)  │
+  │                                                       │
+  │  出站 (CC → H5):                                       │
+  │  CC AI POST /api/reply → Cloud SSE → H5               │
+  │         (或: OB send → Agent OB listener → stdout)    │
+  │                                                       │
+  │  窗口管理:                                              │
+  │  Agent POST /api/announce → Cloud → SSE → Board       │
+  │         (或: OB send → Cloud OB listener)              │
+  └───────────────────────────────────────────────────────┘
 ```
 
-**入站（H5 → CC 窗口）**：
-```
-H5 POST /api/send → Cloud messageQueues → Agent GET /api/poll (每2秒) → stdout JSON → Monitor → CC 会话
-```
+**双通道设计**：
 
-**出站（CC 窗口 → H5）**：
-```
-CC AI POST /api/reply → Cloud → SSE → H5 渲染
-```
+| 通道 | 方式 | 用途 |
+|------|------|------|
+| HTTP | REST + SSE | 浏览器兼容路径，H5 收发，Agent 轮询 |
+| OB P2P | OceanBus L0 | E2EE 加密消息，A2A 通信，实时推送 |
 
-**窗口生命周期（Agent → Cloud）**：
-```
-Agent POST /api/agent/announce {window-open,heartbeat,window-close} → Cloud → SSE → Board 更新
-```
-
-**三层角色**：
-
-| 层 | 技术 | 作用 |
-|----|------|------|
-| 身份层 | OceanBus L0 | Agent 和 Cloud 的永久可寻址身份（OB keypair），消息加密 |
-| 传输层 | HTTP + SSE | 实际消息承载（浏览器兼容） |
-| 应用层 | OceanBus Console | 窗口管理、消息队列、用户分区、UI 渲染 |
+HTTP 是浏览器到 OB 网络的桥接。Cloud 的 OB listener 始终运行，为 A2A 和实时 E2EE 做好准备。当前 H5 走 HTTP，Agent ↔ Cloud 双路径并行。
 
 ---
 

@@ -64,39 +64,65 @@
 <!-- Help Modal -->
 <div class="modal-overlay hidden" id="help-modal">
   <div class="modal help-modal">
-    <h3>📡 OceanBus Console 使用说明</h3>
+    <button class="help-close" onclick="closeHelp()">&times;</button>
+
+    <div class="help-hero">
+      <div class="help-icon">📡</div>
+      <h3>OceanBus Console</h3>
+      <p class="help-subtitle">AI Agent 远程控制台</p>
+    </div>
+
+    <div class="help-value">
+      <div class="help-value-item">
+        <span class="help-value-icon">🔐</span>
+        <span>端到端加密，无需注册登录</span>
+      </div>
+      <div class="help-value-item">
+        <span class="help-value-icon">📱</span>
+        <span>手机 H5 即开即用，随时随地管理 Agent</span>
+      </div>
+      <div class="help-value-item">
+        <span class="help-value-icon">🔗</span>
+        <span>一个命令绑定，复制粘贴两步完成</span>
+      </div>
+    </div>
+
+    <div class="help-divider">
+      <span>快速上手</span>
+    </div>
+
     <div class="help-content">
       <div class="help-step">
         <div class="help-num">1</div>
         <div>
           <strong>绑定 Agent</strong>
-          <p>点击左侧「+ 绑定 Agent」，复制命令到 CC（Claude Code）终端粘贴运行。</p>
+          <p>点击左侧「+ 绑定 Agent」，复制命令到 CC 终端粘贴运行。</p>
         </div>
       </div>
       <div class="help-step">
         <div class="help-num">2</div>
         <div>
           <strong>选择窗口</strong>
-          <p>Agent 启动后，左侧出现绿色圆点的活跃窗口，点击进入对话。</p>
+          <p>Agent 启动后，左侧出现带绿色圆点的活跃窗口，点击进入。</p>
         </div>
       </div>
       <div class="help-step">
         <div class="help-num">3</div>
         <div>
           <strong>发送消息</strong>
-          <p>在底部输入框键入消息，点击发送或按回车。Agent 回复将实时显示。</p>
+          <p>底部输入框键入消息，回车发送。Agent 实时回复。</p>
         </div>
       </div>
       <div class="help-step">
         <div class="help-num">4</div>
         <div>
-          <strong>多窗口支持</strong>
-          <p>多个 CC 窗口可同时绑定，各自独立对话。每个窗口自动以终端标签命名。</p>
+          <strong>多窗口</strong>
+          <p>多个 CC 窗口可同时绑定，各自独立对话，互不干扰。</p>
         </div>
       </div>
     </div>
-    <p class="help-footer">无需注册、无需密码。打开即用，端到端加密。</p>
-    <button class="btn btn-primary btn-sm" style="margin-top:6px" onclick="closeHelp()">知道了</button>
+
+    <button class="btn btn-primary btn-full" style="margin-top:12px" onclick="closeHelp()">开始使用</button>
   </div>
 </div>
 

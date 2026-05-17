@@ -59,16 +59,38 @@ Agent 端：粘贴 → 回车 → 绑定完成
 | 消息接收入站 | Monitor stdout | 自行实现 OB/HTTP 监听 |
 | 消息出站 | CC AI POST /api/reply | OB send 或 HTTP |
 
-### 1.5 通信模式
+### 1.5 出入站链路（纯 HTTP）
 
 ```
-H5→Agent:  H5 POST /api/send → Cloud 队列 → Agent HTTP poll (2s)
-Agent→H5:  Agent POST /api/reply → Cloud → SSE → H5
-Agent→CC:  Agent stdout JSON → Monitor → CC 会话
-CC→H5:     CC AI POST /api/reply → Cloud → SSE → H5
+                        ┌────── Cloud ──────┐
+                        │  ┌──────────────┐  │
+   H5 (手机浏览器) ──SSE──→│  │ 消息队列     │  │──HTTP poll(2s)──→ Agent ──stdout──→ CC
+           │              │  │ 窗口管理     │  │                      │
+           │ POST         │  │ 用户分区     │  │←──POST /api/reply─── CC AI
+           ▼              │  └──────────────┘  │
+        /api/send         └────────────────────┘
+                             ↑          ↓
+                          SSE          SSE
+                             │          │
+                             └── H5 ────┘
 ```
 
-OB 用作 Agent↔Cloud 之间的消息传输（P2P + E2EE）。H5↔Cloud 走 SSE+HTTP（浏览器无法直连 OB）。
+**入站（H5 → CC 窗口）**：
+```
+H5 POST /api/send → Cloud messageQueues → Agent GET /api/poll (每2秒) → stdout JSON → Monitor → CC 会话
+```
+
+**出站（CC 窗口 → H5）**：
+```
+CC AI POST /api/reply → Cloud → SSE → H5 渲染
+```
+
+**窗口生命周期（Agent → Cloud）**：
+```
+Agent POST /api/agent/announce {window-open,heartbeat,window-close} → Cloud → SSE → Board 更新
+```
+
+**Cloud 角色**：HTTP 中继 + 消息队列 + 用户分区。Cloud 不运行 OB listener。
 
 ---
 

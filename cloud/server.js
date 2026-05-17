@@ -275,6 +275,17 @@ async function main() {
         return json(res, { ok: true });
       }
 
+      // ── API: Reply (CC AI → Cloud → H5, bypasses Agent stdin) ──
+      if (req.method === "POST" && url.pathname === "/api/reply") {
+        const body = await parseBody(req);
+        const { window: win, text } = body;
+        if (!text) return json(res, { error: "missing text" }, 400);
+        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        sseBroadcast("message", { window: win || "", text, from: "agent", time });
+        log(`[reply] CC → H5 [${win}] ${text.slice(0, 40)}`);
+        return json(res, { ok: true });
+      }
+
       // ── API: Poll messages (Agent → Cloud HTTP polling) ──
       if (req.method === "GET" && url.pathname === "/api/poll") {
         const win = url.searchParams.get("window") || "__default";

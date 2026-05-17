@@ -1,7 +1,8 @@
 /**
- * OceanBus Console — H5 App
+ * OceanBus Console — Multi-User H5 App
  *
- * SSE → Cloud → OB → Agent
+ * Identity: UUID v4 → localStorage (future: OB keypair via Web Crypto)
+ * All API calls include h5_openid for user partitioning.
  */
 
 const G = ""; // relative API paths
@@ -9,29 +10,45 @@ let sse = null;
 let activeWindow = null;
 let peers = {};    // { name: { openid, boundAt } }
 let windows = [];  // [{ name, status, cwd, lastBeat }]
+let myOpenId = ""; // this H5 user's identity
+
+// ── Identity (UUID v4, stored in localStorage) ──────────────
+function loadIdentity() {
+  let id = localStorage.getItem("ob-h5-openid");
+  if (!id) {
+    id = crypto.randomUUID();
+    localStorage.setItem("ob-h5-openid", id);
+  }
+  return id;
+}
 
 // ── Shortcuts ─────────────────────────────────────────────────
 function $(id) { return document.getElementById(id); }
 function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("show"); setTimeout(() => e.classList.remove("show"), 2500); }
 
-// ── API ──────────────────────────────────────────────────────
+// ── API (auto-includes h5_openid) ────────────────────────────
 async function api(path, opts = {}) {
-  const res = await fetch(G + path, opts);
+  let fullPath = G + path;
+  if (!fullPath.includes("h5_openid=")) {
+    fullPath += (fullPath.includes("?") ? "&" : "?") + "h5_openid=" + myOpenId;
+  }
+  const res = await fetch(fullPath, opts);
   return res.json();
 }
 
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
-  // SSE
-  sse = new EventSource(G + "/api/events");
+  myOpenId = loadIdentity();
+  console.log("H5 identity:", myOpenId.slice(0, 8) + "...");
+
+  // SSE with user context
+  sse = new EventSource(G + "/api/events?h5_openid=" + myOpenId);
   sse.addEventListener("connected", () => console.log("SSE connected"));
   sse.addEventListener("windows",  (e) => { windows = JSON.parse(e.data); renderWindows(); renderMain(); });
   sse.addEventListener("message",  (e) => onMsg(JSON.parse(e.data)));
   sse.addEventListener("bound",    (e) => { loadPeers(); toast("Agent 绑定成功!"); });
   sse.onerror = () => {}; // auto-reconnect
 
-  // Load cloud identity for pairing display
-  try { const id = await api("/api/identity"); cloudOpenId = id.openid; } catch {}
   await loadPeers();
   await loadWindows();
   renderWindows();
@@ -58,7 +75,7 @@ function renderWindows() {
   const offline = windows.filter(w => w.status !== "online");
 
   if (online.length === 0 && offline.length === 0) {
-    list.innerHTML = '<div class="note">暂无窗口。在 CC 中运行 npx oceanbus@latest start</div>';
+    list.innerHTML = '<div class="note">暂无窗口。<br>在 CC 中绑定 Agent 后出现</div>';
     return;
   }
 
@@ -76,7 +93,7 @@ function renderWindows() {
 
 function renderPeers() {
   const list = $("agent-list");
-  const names = Object.keys(peers).filter(n => peers[n].openid !== cloudOpenId);
+  const names = Object.keys(peers);
   if (names.length === 0) {
     list.innerHTML = '<div class="note">暂无绑定</div>';
   } else {
@@ -91,8 +108,6 @@ function renderPeers() {
   }
 }
 
-let cloudOpenId = "";
-
 function selectWindow(name) {
   activeWindow = name;
   renderWindows();
@@ -102,11 +117,10 @@ function selectWindow(name) {
 
 // ── Messages ──────────────────────────────────────────────────
 const messageStore = {}; // windowName → [{from, text, time, id}]
-const seenMsgIds = new Set();  // dedup across SSE + local add
+const seenMsgIds = new Set();
 let msgIdCtr = 0;
 
 function onMsg(data) {
-  // Dedup by msg_id (SSE may echo our own messages back)
   if (data.msg_id && seenMsgIds.has(data.msg_id)) return;
   if (data.msg_id) seenMsgIds.add(data.msg_id);
 
@@ -115,12 +129,9 @@ function onMsg(data) {
   const mid = data.msg_id || ("sse_" + (++msgIdCtr));
   messageStore[win].push({ from: data.from, text: data.text, time: data.time || now(), id: mid });
 
-  // If viewing this window, render
   if (activeWindow === win) {
     addBubble(data.from === "h5" ? "h5" : "agent", data.text, data.time, mid);
   }
-
-  // If not viewing any window, auto-switch
   if (!activeWindow && win) {
     activeWindow = win;
     renderWindows();
@@ -168,7 +179,7 @@ async function sendMsg() {
     await api("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ window: activeWindow, text, agent: peerNames[0], msg_id: mid }),
+      body: JSON.stringify({ h5_openid: myOpenId, window: activeWindow, text, agent: peerNames[0], msg_id: mid }),
     });
   } catch (e) { toast("发送失败: " + e.message); }
 }
@@ -177,15 +188,17 @@ async function sendMsg() {
 function renderMain() {
   if (activeWindow) {
     $("input-bar").classList.remove("hidden");
-    $("main-header").innerHTML = `<span style="font-size:20px">💬</span><div>
-      <div class="title">${esc(activeWindow)}</div><div class="meta">已连接 · OB 加密</div></div>`;
+    $("main-header").innerHTML = `<button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <span style="font-size:20px">💬</span><div>
+      <div class="title">${esc(activeWindow)}</div><div class="meta">已连接</div></div>`;
     $("msg-container").innerHTML = '<div class="messages" id="messages"></div>';
     loadMessages(activeWindow);
   } else {
     $("input-bar").classList.add("hidden");
-    $("main-header").innerHTML = `<span style="font-size:24px">📡</span><div>
+    $("main-header").innerHTML = `<button class="menu-btn" onclick="toggleSidebar()">☰</button>
+      <span style="font-size:24px">📡</span><div>
       <div class="title">OceanBus Console</div><div class="meta">选择一个窗口开始对话</div></div>`;
-    $("msg-container").innerHTML = '<div class="placeholder">👈 选择窗口或绑定 Agent</div>';
+    $("msg-container").innerHTML = '<div class="placeholder">点击左侧窗口或绑定 Agent</div>';
   }
 }
 
@@ -195,8 +208,9 @@ async function startPairing() {
   $("pairing-cmd").textContent = "加载中...";
 
   try {
-    const id = await api("/api/identity");
-    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${id.openid}`;
+    const gwUrl = window.location.origin || "http://localhost:3456";
+    // Peer is THIS H5 user's identity — Cloud routes by h5_openid
+    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl}`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

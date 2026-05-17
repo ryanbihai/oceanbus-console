@@ -126,7 +126,7 @@ function renderWindows() {
   const online = windows.filter(w => w.status === "online");
 
   if (online.length === 0) {
-    list.innerHTML = '<div class="note">暂无活跃窗口。<br>在 CC 中绑定 Agent 后出现</div>';
+    list.innerHTML = '<div class="note">暂无活跃窗口。<br><br>点击下方「+ 绑定 Agent」<br>复制命令到 CC 终端粘贴运行<br><br>或点击右上角 <b>?</b> 查看完整说明</div>';
     return;
   }
 
@@ -270,6 +270,13 @@ async function startPairing() {
 
 function closePairing() {
   $("pairing-modal").classList.add("hidden");
+}
+
+function showHelp() {
+  $("help-modal").classList.remove("hidden");
+}
+function closeHelp() {
+  $("help-modal").classList.add("hidden");
 }
 
 function copyCmd() {

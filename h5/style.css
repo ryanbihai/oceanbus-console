@@ -117,6 +117,28 @@ body{
   line-height: 1;
 }
 .back-btn:hover{background: var(--bg-hover)}
+.help-btn{
+  width: 28px; height: 28px; border-radius: 50%;
+  border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+  font-size: 14px; font-weight: 700; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; flex-shrink: 0; transition: all .15s; margin-left: auto;
+  line-height: 1;
+}
+.help-btn:hover{color: var(--text); border-color: var(--primary); background: var(--primary-glow)}
+
+/* ── Help modal ────────────────────────────────────────── */
+.help-modal{max-width: 440px; text-align: left}
+.help-content{display: flex; flex-direction: column; gap: 12px; margin: 16px 0}
+.help-step{display: flex; gap: 12px; align-items: flex-start}
+.help-num{
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(135deg, var(--primary), #1d4ed8);
+  color: #fff; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+}
+.help-step strong{font-size: 14px; color: var(--text)}
+.help-step p{font-size: 12px; color: var(--text-muted); margin-top: 2px; line-height: 1.5}
+.help-footer{font-size: 12px; color: var(--text-dim); text-align: center; border-top: 1px solid var(--border-light); padding-top: 12px; margin-top: 4px}
 
 #msg-container{flex:1;overflow:hidden;display:flex;flex-direction:column}
 .messages{

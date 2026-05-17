@@ -290,6 +290,64 @@ Agent 运行 --peer <h5_openid>:
 | A2A（Agent 间通信）| 第二阶段 |
 | 语音能力 | 后续通过小程序 |
 | Board→CC 窗口改名 | 等 CC 支持编程式改标签 |
-| CC 原生注入 OCEANUS_WINDOW_NAME | 提 CC feature request |
+| CC AI 出站走 OB（去掉 /api/reply）| Agent stdin 桥接到 CC AI |
 
 ---
+
+## 8. 开发教训（2026-05-17）
+
+### 8.1 OB listener 不工作？先检查 SDK 版本
+
+**现象**：`ob.send()` 返回成功，L0 信箱有消息（原始 API sync 验证通过），但 `ob.startListening()` 收不到。
+
+**根因**：Cloud 的 node_modules 装的是 npm 旧版 oceanbus v0.9.1，listener 有 bug。本地 SDK dist 测过了但云端没更新。
+
+**教训**：
+- 任何 OB 通信问题，第一步：`npm ls oceanbus` 检查版本
+- 每次改 SDK 后必须 `npm publish` + Cloud 端 `npm install oceanbus@latest`
+- 不要假设 `npm install` 装的是最新版（除非显式指定 `@latest`）
+
+### 8.2 窗口命名：共享文件 = 多窗口地狱
+
+**现象**：两个 CC 窗口启动 Agent，Board 上只显示一个。因为都用 `~/.oceanbus/window-name`，后者覆盖前者。
+
+**根因**：单文件无法区分多个窗口。
+
+**修复**：`cwd-basename-PID` 自动生成唯一名。去掉文件依赖。
+
+**教训**：涉及"多实例"的场景，永远不要用全局可变的共享资源做身份标识。用 PID、时间戳、或 UUID 自动生成唯一 ID。
+
+### 8.3 OB 消息过滤：控制消息不能泄漏到用户界面
+
+**现象**：CC 会话收到空文本消息，`chat_id` 是 Cloud 的 OB 地址。
+
+**根因**：Agent 的 OB listener 把所有 OB 消息（包括心跳、窗口管理等控制消息）都 emit 到了 stdout。
+
+**修复**：只 emit `action === 'message' | 'reply' | 'command'` 且有 `text` 的消息。
+
+**教训**：P2P 链路上同时跑用户消息和控制消息。消费端必须按 `action` 字段过滤，否则心跳和窗口管理会污染用户 UI。
+
+### 8.4 `npx oceanbus start` 是持久进程，CC 内必须用 Monitor
+
+**现象**：CC 窗口直接运行命令后卡住不动。
+
+**根因**：`oceanbus start` 的 `await new Promise(() => {})` 永久阻塞。CC 直接运行会等它结束（永远不会）。
+
+**修复**：CLAUDE.md 流程 H 规定 CC AI 必须用 Monitor 工具启动。
+
+**教训**：任何持久监听进程，在 CC 内必须走 Monitor。CLAUDE.md 中的流程必须写死这一点。
+
+### 8.5 进程残留：多轮调试会累积僵尸 Agent
+
+**现象**：一次性杀掉 11 个 `oceanbus start` 进程。
+
+**根因**：每次重启 Cloud 时杀 `Get-Process node`，但旧 Agent 在不同窗口/终端，不在同一个 node 进程池。
+
+**教训**：
+- `oceanbus start` 退出时应主动发 `window-close` 并清理
+- Cloud 的心跳超时（30s）可以自动标记离线，但不杀进程
+- 未来考虑 Agent PID 文件，让 Cloud 可检测僵尸窗口
+
+---
+
+## 9. 与 wechat-cc 对比

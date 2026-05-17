@@ -13,10 +13,22 @@ let windows = [];  // [{ name, status, cwd, lastBeat }]
 let myOpenId = ""; // this H5 user's identity
 
 // ── Identity (UUID v4, stored in localStorage) ──────────────
+function generateUUID() {
+  // crypto.randomUUID() may be unavailable on HTTP (non-localhost)
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    try { return crypto.randomUUID(); } catch { /* fall through */ }
+  }
+  // Fallback: RFC 4122 v4 UUID
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random() * 16 | 0;
+    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+  });
+}
+
 function loadIdentity() {
   let id = localStorage.getItem("ob-h5-openid");
   if (!id) {
-    id = crypto.randomUUID();
+    id = generateUUID();
     localStorage.setItem("ob-h5-openid", id);
   }
   return id;
@@ -256,6 +268,9 @@ function renderMain() {
 
 // ── Pairing ─────────────────────────────────────────────────────
 async function startPairing() {
+  // Ensure identity is loaded (defensive: button may be clicked before init completes)
+  if (!myOpenId) myOpenId = loadIdentity();
+
   $("pairing-modal").classList.remove("hidden");
   $("pairing-cmd").textContent = "加载中...";
 
@@ -281,11 +296,31 @@ function closeHelp() {
 
 function copyCmd() {
   const text = $("pairing-cmd").textContent;
-  if (navigator.clipboard) {
-    navigator.clipboard.writeText(text).then(() => toast("已复制!"));
+  // Try modern clipboard API first (works on HTTPS / localhost)
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => toast("已复制!")).catch(() => fallbackCopy(text));
   } else {
-    prompt("复制以下命令:", text);
+    fallbackCopy(text);
   }
+}
+
+function fallbackCopy(text) {
+  // execCommand('copy') fallback — works on plain HTTP
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  ta.style.top = '-9999px';
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  try {
+    document.execCommand('copy');
+    toast('已复制!');
+  } catch {
+    toast('复制失败，请手动复制');
+  }
+  document.body.removeChild(ta);
 }
 
 // ── Sidebar ──────────────────────────────────────────────────

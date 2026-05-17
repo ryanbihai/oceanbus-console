@@ -34,7 +34,7 @@ OceanBus Console 是 OceanBus 网络的应用灯塔。它必须**使用 OB 的�
 |------|------|
 | 统一动作 | 拷贝 → 粘贴，两个动作完成所有绑定 |
 | 零记忆 | 不记命令、不记参数、不记地址 |
-| 零输入 | 不手打 openid、不输配对码 |
+| 零输入 | 不手打 openid、不输配对码、不输入agent名称 |
 | 一键连接 | CC 窗口说"npx oceanbus@latest start --peer <console openid>"即可，随后CC AI 代劳一切 |
 | 即开即用 | 打开 H5 页面自动创建身份，无需注册登录 |
 

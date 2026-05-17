@@ -208,9 +208,10 @@ async function startPairing() {
   $("pairing-cmd").textContent = "加载中...";
 
   try {
-    const gwUrl = window.location.origin || "http://localhost:3456";
-    // Peer is THIS H5 user's identity — Cloud routes by h5_openid
-    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl}`;
+    const gwUrl = window.location.origin;
+    const gwFlag = gwUrl && gwUrl !== "http://127.0.0.1:3456" && gwUrl !== "http://localhost:3456"
+      ? ` --gateway-url ${gwUrl}` : "";
+    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId}${gwFlag}`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

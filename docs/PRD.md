@@ -22,8 +22,6 @@ OceanBus Console 是 OceanBus 网络的应用灯塔。它必须**展示 OB 的�
 | AgentCard | 每个 Agent 拥有可验证身份卡片 |
 | 黄页发现 | 未来 Agent 可通过黄页互相发现 |
 
-**非目标**：展示区块链、代币、或任何金融化能力。
-
 ### 第二条：小白友好
 
 让**不懂代码的用户**可以通过手机 H5 页面远程管理自己的 Agent。
@@ -33,7 +31,7 @@ OceanBus Console 是 OceanBus 网络的应用灯塔。它必须**展示 OB 的�
 | 统一动作 | 拷贝 → 粘贴，两个动作完成所有绑定 |
 | 零记忆 | 不记命令、不记参数、不记地址 |
 | 零输入 | 不手打 openid、不输配对码 |
-| 一键连接 | CC 窗口说"连接 OB"即可，CC AI 代劳一切 |
+| 一键连接 | CC 窗口说"npx oceanbus@latest start --peer <console openid>"即可，随后CC AI 代劳一切 |
 | 即开即用 | 打开 H5 页面自动创建身份，无需注册登录 |
 
 用户的心智模型：**Board 上点按钮 → 复制 → 到 Agent 端粘贴 → 完成。**
@@ -107,39 +105,47 @@ Agent 端：粘贴 → 回车 → 绑定完成
 | 消息接收入站 | Monitor stdout | 自行实现 OB/HTTP 监听 |
 | 消息出站 | CC AI POST /api/reply | OB send 或 HTTP |
 
-### 1.5 出入站链路
+### 1.5 出入站链路（OB P2P 唯一通信通道）
 
 ```
-  H5 (手机)                Cloud                      Agent (PC)
-  ─────────              ────────                    ──────────
-  UUID 身份              OB 身份 (P2P)               OB 身份 (P2P)
-                         OB listener                 
-       │                    │                           │
-       │                    │                           │
-  ┌────┴─ HTTP/SSE ────────┴─ OB P2P ─────────────────┴──┐
-  │                                                       │
+  消息传输 = 纯 OB P2P。HTTP 只用于两个场景：
+    ① Boot 引导：Agent 启动时查一次 Cloud 的 OB 地址
+    ② H5 SSE：浏览器无法做 OB P2P，Cloud 通过 SSE 推送
+
+  H5 (手机)              Cloud                       Agent (PC)
+  ─────────             ────────                    ──────────
+  UUID 身份             OB 身份 (fresh)              OB 身份
+                         OB listener
+       │                    │                          │
+       │                    │    Boot: 一次性 HTTP      │
+       │                    │ ←─ GET /api/identity ────┤
+       │                    │ ─→ Cloud 的 OB 地址 ──→  │
+       │                    │                          │
+  ┌────┴─ HTTP/SSE ────────┴──── OB P2P ─────────────┴──┐
+  │                                                      │
   │  入站 (H5 → CC):                                       │
-  │  H5 POST /api/send → Cloud queue → Agent /api/poll    │
-  │         (或: OB send → Cloud OB listener → SSE → H5)  │
-  │                                                       │
+  │  H5 POST /api/send → Cloud OB send → Agent OB 监听    │
+  │                                          → stdout     │
+  │                                                      │
   │  出站 (CC → H5):                                       │
-  │  CC AI POST /api/reply → Cloud SSE → H5               │
-  │         (或: OB send → Agent OB listener → stdout)    │
-  │                                                       │
-  │  窗口管理:                                              │
-  │  Agent POST /api/announce → Cloud → SSE → Board       │
-  │         (或: OB send → Cloud OB listener)              │
-  └───────────────────────────────────────────────────────┘
+  │  Agent OB send → Cloud OB 监听 → SSE → H5             │
+  │  (CC AI 通过 Agent stdin 回复，不走 HTTP)              │
+  │                                                      │
+  │  窗口管理: OB send → Cloud OB 监听 → SSE → Board       │
+  └──────────────────────────────────────────────────────┘
 ```
 
-**双通道设计**：
+**OB 是唯一消息通道**。消息经过 OB L0：E2EE 加密、P2P 寻址、mailbox 持久化。
+没有 HTTP `/api/poll`，没有 HTTP `/api/agent/announce`，没有 HTTP 消息中继。
 
-| 通道 | 方式 | 用途 |
+**HTTP 仅用于**：
+| 场景 | 端点 | 频率 |
 |------|------|------|
-| HTTP | REST + SSE | 浏览器兼容路径，H5 收发，Agent 轮询 |
-| OB P2P | OceanBus L0 | E2EE 加密消息，A2A 通信，实时推送 |
-
-HTTP 是浏览器到 OB 网络的桥接。Cloud 的 OB listener 始终运行，为 A2A 和实时 E2EE 做好准备。当前 H5 走 HTTP，Agent ↔ Cloud 双路径并行。
+| Boot 引导 | `GET /api/identity` → Cloud OB 地址 | Agent 启动时一次 |
+| H5 收消息 | `GET /api/events` (SSE) | 持久连接 |
+| H5 发消息 | `POST /api/send` → Cloud OB send | 每次消息 |
+| H5 查询 | `GET /api/peers`, `/api/windows` | 按需 |
+| CC AI 回复 | `POST /api/reply` (过渡方案) | 每次回复 |
 
 ---
 
@@ -242,9 +248,19 @@ Agent 运行 --peer <h5_openid>:
 | `/api/windows` | GET | 当前用户的活跃窗口 |
 | `/api/send` | POST | H5 发消息给 Agent {h5_openid, window, text} |
 | `/api/reply` | POST | CC AI 回复 {window, text} |
-| `/api/poll` | GET | Agent 拉取消息（含 window 过滤） |
-| `/api/agent/announce` | POST | Agent 注册/心跳/关闭 |
+| `/api/poll` | GET | **已废弃**（Agent 改用 OB listener） |
+| `/api/agent/announce` | POST | **已废弃**（窗口管理走 OB） |
 | `/api/events` | GET | SSE 实时推送 |
+
+**OB 消息模式**（替代 HTTP poll 和 announce）：
+
+| 方向 | OB action | Cloud 处理 |
+|------|-----------|-----------|
+| Agent → Cloud | `window-open` | OB listener → 注册窗口 → SSE 推 Board |
+| Agent → Cloud | `heartbeat` | OB listener → 更新心跳 + 改名检测 |
+| Agent → Cloud | `window-close` | OB listener → 移除窗口 → SSE |
+| Agent → Cloud | `reply` / `message` | OB listener → SSE 推 H5 |
+| Cloud → Agent | `message` | `/api/send` → Cloud OB send → Agent OB listener |
 
 ---
 

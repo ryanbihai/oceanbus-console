@@ -3,35 +3,40 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#060b14">
 <title>OceanBus Console</title>
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
 
+<!-- Sidebar backdrop (mobile) -->
+<div class="sidebar-backdrop" id="sidebar-backdrop" onclick="closeSidebar()"></div>
+
 <!-- Sidebar -->
-<aside class="sidebar">
+<aside class="sidebar open" id="sidebar">
   <div class="sidebar-header">
-    <span class="logo">📡</span>
+    <div class="logo">📡</div>
     <span>OceanBus</span>
-    <span class="dot dot-green" id="conn-dot" title="Cloud 连接"></span>
+    <span class="dot dot-green" id="conn-dot"></span>
   </div>
 
   <div class="section">
-    <div class="section-title">Agent 列表</div>
-    <div id="agent-list"></div>
-    <button class="btn btn-outline btn-sm" style="margin-top:6px;width:100%" onclick="startPairing()">🔗 绑定新 Agent</button>
+    <div class="section-title">已绑定 Agent</div>
+    <div id="agent-list"><div class="note">暂无</div></div>
+    <button class="btn btn-outline btn-sm btn-full" style="margin-top:8px" onclick="startPairing()">+ 绑定 Agent</button>
   </div>
 
-  <div class="section" style="flex:1;overflow-y:auto">
+  <div class="section">
     <div class="section-title">活跃窗口</div>
-    <div id="window-list"></div>
+    <div id="window-list"><div class="note">暂无窗口</div></div>
   </div>
 </aside>
 
 <!-- Main -->
 <main class="main">
   <header class="main-header" id="main-header">
-    <span style="font-size:24px">📡</span>
+    <button class="menu-btn" onclick="toggleSidebar()" title="菜单">☰</button>
+    <span style="font-size:22px">📡</span>
     <div>
       <div class="title">OceanBus Console</div>
       <div class="meta">选择一个窗口开始对话</div>
@@ -39,7 +44,7 @@
   </header>
 
   <div id="msg-container">
-    <div class="placeholder">👈 选择窗口或绑定 Agent</div>
+    <div class="placeholder">点击左侧窗口开始对话</div>
   </div>
 
   <div class="input-bar hidden" id="input-bar">
@@ -51,12 +56,12 @@
 <!-- Pairing Modal -->
 <div class="modal-overlay hidden" id="pairing-modal">
   <div class="modal">
-    <h3>🔗 绑定 Agent</h3>
-    <p class="info">在 Agent 终端复制运行：</p>
-    <div class="cmd" id="pairing-cmd">npx oceanbus start --peer ...</div>
-    <button class="btn btn-primary btn-sm" onclick="copyCmd()">📋 复制命令</button>
-    <p class="info" style="margin-top:12px">复制后粘贴到 CC 窗口即可</p>
-    <button class="btn btn-outline btn-sm" onclick="closePairing()">关闭</button>
+    <h3>绑定 Agent</h3>
+    <p class="info">在 CC 终端复制运行：</p>
+    <div class="cmd" id="pairing-cmd">加载中...</div>
+    <button class="btn btn-primary btn-sm" onclick="copyCmd()">复制命令</button>
+    <p class="info" style="margin-top:10px">粘贴到 Agent 终端即可完成绑定</p>
+    <button class="btn btn-outline btn-sm" style="margin-top:4px" onclick="closePairing()">关闭</button>
   </div>
 </div>
 

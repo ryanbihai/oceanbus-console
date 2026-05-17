@@ -30,6 +30,8 @@ async function init() {
   sse.addEventListener("bound",    (e) => { loadPeers(); toast("Agent 绑定成功!"); });
   sse.onerror = () => {}; // auto-reconnect
 
+  // Load cloud identity for pairing display
+  try { const id = await api("/api/identity"); cloudOpenId = id.openid; } catch {}
   await loadPeers();
   await loadWindows();
   renderWindows();
@@ -74,17 +76,22 @@ function renderWindows() {
 
 function renderPeers() {
   const list = $("agent-list");
-  const names = Object.keys(peers);
+  const names = Object.keys(peers).filter(n => peers[n].openid !== cloudOpenId);
   if (names.length === 0) {
-    list.innerHTML = '<div class="note">暂无绑定。点击下方按钮绑定 Agent</div>';
+    list.innerHTML = '<div class="note">暂无绑定</div>';
   } else {
-    list.innerHTML = names.map(n => `<div class="agent-item">
-      <span>🖥</span>
-      <span class="agent-name">${esc(n)}</span>
-      <span style="font-size:10px;color:#64748b">${peers[n].openid.slice(0,8)}...</span>
-    </div>`).join("");
+    list.innerHTML = names.map(n => {
+      const shortId = peers[n].openid.slice(0, 6);
+      return `<div class="agent-item">
+        <span>🖥</span>
+        <span class="agent-name">${esc(n)}</span>
+        <span style="font-size:10px;color:var(--text-dim)">${shortId}...</span>
+      </div>`;
+    }).join("");
   }
 }
+
+let cloudOpenId = "";
 
 function selectWindow(name) {
   activeWindow = name;
@@ -207,6 +214,15 @@ function copyCmd() {
   } else {
     prompt("复制以下命令:", text);
   }
+}
+
+// ── Sidebar ──────────────────────────────────────────────────
+function toggleSidebar() {
+  const sb = $("sidebar");
+  sb.classList.toggle("open");
+}
+function closeSidebar() {
+  $("sidebar").classList.remove("open");
 }
 
 // ── Utils ──────────────────────────────────────────────────────

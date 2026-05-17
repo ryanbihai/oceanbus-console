@@ -271,6 +271,38 @@ async function main() {
         return json(res, Object.entries(peers).map(([k, v]) => ({ name: k, openid: v.openid, boundAt: v.boundAt })));
       }
 
+      // ── API: Agent announce (HTTP fallback when OB listener lagging) ─
+      if (req.method === "POST" && url.pathname === "/api/agent/announce") {
+        const body = await parseBody(req);
+        const action = body.action || body.type;
+        const win = body.window || "";
+
+        if (action === "window-open" && win) {
+          windows.set(win, { lastBeat: Date.now(), cwd: body.cwd || "", status: "online" });
+          // Save as peer
+          if (body.agent_openid) {
+            const peerName = body.agent_name || win;
+            peers[peerName] = { openid: body.agent_openid, name: peerName, boundAt: new Date().toISOString() };
+            saveJSON(PEERS_FILE, peers);
+            sseBroadcast("bound", { agent: peerName, openid: body.agent_openid });
+          }
+          log(`[window] + ${win} (HTTP)`);
+          sseBroadcast("windows", getWindows());
+          return json(res, { ok: true, action: "window-open" });
+        }
+        if (action === "heartbeat" && win && windows.has(win)) {
+          windows.get(win).lastBeat = Date.now();
+          windows.get(win).status = "online";
+          return json(res, { ok: true, action: "heartbeat" });
+        }
+        if (action === "window-close" && win) {
+          windows.delete(win);
+          sseBroadcast("windows", getWindows());
+          return json(res, { ok: true, action: "window-close" });
+        }
+        return json(res, { error: "unknown action" }, 400);
+      }
+
       // ── API: Windows ──────────────────────────────────────
       if (req.method === "GET" && url.pathname === "/api/windows") {
         return json(res, getWindows());

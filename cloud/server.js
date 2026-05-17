@@ -111,26 +111,11 @@ async function main() {
   }
   log(`Cloud OB: ${creds.openid.slice(0, 8)}...`);
 
-  // 2. OB listener (receives from Agent → forwards to H5 via SSE)
+  // 2. OB sender (for /api/send fallback — all other comms via HTTP)
   const oceanbus = await import("oceanbus");
   const ob = await oceanbus.createOceanBus({
     keyStore: { type: "memory" },
     identity: { agent_id: creds.agent_id, api_key: creds.api_key, openid: creds.openid },
-  });
-  log(`OB listener started`);
-
-  ob.startListening(async (msg) => {
-    if (msg.from_openid === creds.openid) return;
-    let parsed;
-    try { parsed = JSON.parse(msg.content || "{}"); } catch { parsed = {}; }
-    const action = parsed.action || parsed.type;
-
-    if (action === "window-open" || action === "bound" || action === "heartbeat"
-        || action === "window-close" || action === "message" || action === "reply") {
-      // These are handled via HTTP /api/agent/announce with user context
-      // OB listener serves as fallback only
-      log(`[ob] ${action} from ${msg.from_openid.slice(0, 8)}...`);
-    }
   });
 
   // 3. HTTP Server

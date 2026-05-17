@@ -64,6 +64,7 @@ setInterval(() => {
 
 // ── Window tracking ─────────────────────────────────────────
 const windows = new Map(); // windowName → { lastBeat, cwd, status: "online"|"offline" }
+const messageQueues = {}; // windowName → [{action,window,text,from,time}]
 const WINDOW_TIMEOUT = 30_000;
 
 function getWindows() {
@@ -248,22 +249,38 @@ async function main() {
         const { window: win, text, agent } = body;
         if (!text) return json(res, { error: "missing text" }, 400);
 
-        // Find peer
-        const peerKey = agent || Object.keys(peers)[0];
-        const peer = peers[peerKey];
+        // Find peer (skip self)
+        let peer = null;
+        if (agent && peers[agent] && peers[agent].openid !== creds.openid) {
+          peer = peers[agent];
+        }
+        if (!peer) {
+          for (const [key, val] of Object.entries(peers)) {
+            if (val.openid !== creds.openid) { peer = val; break; }
+          }
+        }
         if (!peer) return json(res, { error: "no bound agent" }, 400);
 
-        await ob.send(peer.openid, JSON.stringify({
-          action: "message",
-          window: win || "",
-          text,
-          from: "h5",
-          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }),
-        }));
+        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        const msgObj = { action: "message", window: win || "", text, from: "h5", time };
 
-        sseBroadcast("message", { window: win || "", text, from: "h5",
-          time: new Date().toLocaleTimeString("zh-CN", { hour12: false }) });
+        // Store in message queue (HTTP polling fallback)
+        if (!messageQueues[win || "__default"]) messageQueues[win || "__default"] = [];
+        messageQueues[win || "__default"].push(msgObj);
+
+        // Try OB send
+        ob.send(peer.openid, JSON.stringify(msgObj)).catch(() => {});
+
+        sseBroadcast("message", { window: win || "", text, from: "h5", time });
         return json(res, { ok: true });
+      }
+
+      // ── API: Poll messages (Agent → Cloud HTTP polling) ──
+      if (req.method === "GET" && url.pathname === "/api/poll") {
+        const win = url.searchParams.get("window") || "__default";
+        const queue = messageQueues[win] || [];
+        const batch = queue.splice(0); // drain
+        return json(res, { messages: batch });
       }
 
       // ── API: Peers ────────────────────────────────────────

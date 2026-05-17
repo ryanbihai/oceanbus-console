@@ -124,48 +124,27 @@ function lastMsgPreview(win) {
 function renderWindows() {
   const list = $("window-list");
   const online = windows.filter(w => w.status === "online");
-  const offline = windows.filter(w => w.status !== "online");
 
-  if (online.length === 0 && offline.length === 0) {
-    list.innerHTML = '<div class="note">暂无窗口。<br>在 CC 中绑定 Agent 后出现</div>';
+  if (online.length === 0) {
+    list.innerHTML = '<div class="note">暂无活跃窗口。<br>在 CC 中绑定 Agent 后出现</div>';
     return;
   }
 
-  list.innerHTML = [
-    ...online.map(w => {
-      const preview = lastMsgPreview(w.name);
-      return `<div class="window-item${activeWindow===w.name?' active':''}" onclick="selectWindow('${w.name}')">
-        <span class="window-status ws-online"></span>
-        <div class="window-info">
-          <span class="window-name">${esc(w.name)}</span>
-          ${preview ? `<span class="window-lastmsg">${esc(preview)}</span>` : ""}
-        </div>
-      </div>`;
-    }),
-    ...offline.map(w => `<div class="window-item" onclick="toast('${esc(w.name)} 已离线')">
-      <span class="window-status ws-offline"></span>
+  list.innerHTML = online.map(w => {
+    const preview = lastMsgPreview(w.name);
+    return `<div class="window-item${activeWindow===w.name?' active':''}" onclick="selectWindow('${w.name}')">
+      <span class="window-status ws-online"></span>
       <div class="window-info">
-        <span class="window-name" style="color:#64748b">${esc(w.name)}</span>
+        <span class="window-name">${esc(w.name)}</span>
+        ${preview ? `<span class="window-lastmsg">${esc(preview)}</span>` : ""}
       </div>
-    </div>`),
-  ].join("");
+    </div>`;
+  }).join("");
 }
 
 function renderPeers() {
-  const list = $("agent-list");
-  const names = Object.keys(peers);
-  if (names.length === 0) {
-    list.innerHTML = '<div class="note">暂无绑定</div>';
-  } else {
-    list.innerHTML = names.map(n => {
-      const shortId = peers[n].openid.slice(0, 6);
-      return `<div class="agent-item">
-        <span>🖥</span>
-        <span class="agent-name">${esc(n)}</span>
-        <span style="font-size:10px;color:var(--text-dim)">${shortId}...</span>
-      </div>`;
-    }).join("");
-  }
+  // Peer data rendered as window list items instead (windows = agents)
+  // Internal peers map used by sendMsg()
 }
 
 function selectWindow(name) {

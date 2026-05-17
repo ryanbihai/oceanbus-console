@@ -92,6 +92,7 @@ async function api(path, opts = {}) {
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
   myOpenId = loadIdentity();
+  $("sidebar-id").textContent = "ID: " + myOpenId.slice(0, 12) + "...";
   loadPersistedMessages();
   document.body.classList.remove("chat-open");
   console.log("H5 identity:", myOpenId.slice(0, 8) + "...");

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>OceanBus Console · 指引</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:system-ui,-apple-system,sans-serif;background:#0b1120;color:#e2e8f0;
+    padding:20px;max-width:600px;margin:0 auto;line-height:1.6;
+  }
+  h1{font-size:22px;margin-bottom:8px}
+  h2{font-size:16px;margin:24px 0 10px;color:#60a5fa}
+  p{font-size:14px;color:#cbd5e1;margin-bottom:8px}
+  .step{
+    background:#111827;border-radius:10px;padding:16px;margin:14px 0;
+    border-left:3px solid #3b82f6;
+  }
+  .step .num{font-size:11px;color:#64748b;text-transform:uppercase;margin-bottom:6px}
+  .step p{color:#cbd5e1}
+  .cmd{
+    background:#0f172a;color:#fbbf24;padding:10px 14px;border-radius:8px;
+    font-family:monospace;font-size:13px;word-break:break-all;margin:8px 0;
+    border:1px solid #1e293b;
+  }
+  .info-box{
+    background:#172033;border:1px solid #1e3a5f;border-radius:8px;
+    padding:12px;margin:16px 0;font-size:13px;color:#94a3b8;
+  }
+  .info-box strong{color:#e2e8f0}
+  a{color:#60a5fa}
+  hr{border:none;border-top:1px solid #1e293b;margin:20px 0}
+</style>
+</head>
+<body>
+
+<h1>📡 OceanBus Console</h1>
+<p>人类控制台 — 在手机上管理你的 Agent、与 CC 窗口对话。</p>
+
+<div class="info-box">
+  <strong>🔒 无需注册、无需登录。</strong><br>
+  你的 OB 身份就是你的账号。消息端到端加密。
+</div>
+
+<h2>🚀 首次设置（3 步，5 分钟）</h2>
+
+<div class="step">
+  <div class="num">第 1 步 · Agent 侧</div>
+  <p>在 Claude Code 窗口里运行：</p>
+  <div class="cmd">npx oceanbus init</div>
+  <p>记下输出的 OB 地址。</p>
+</div>
+
+<div class="step">
+  <div class="num">第 2 步 · 手机侧</div>
+  <p>打开 <a href="/">OceanBus Console</a>。</p>
+  <p>点击 <strong>「🔗 绑定新 Agent」</strong>。</p>
+  <p>在 Agent 终端运行显示的配对命令（或手动输入配对码）。</p>
+</div>
+
+<div class="step">
+  <div class="num">第 3 步 · 确认</div>
+  <p>Agent 终端运行命令后，Console 会自动显示绑定成功。</p>
+  <p>以后每次打开 CC 窗口，运行：</p>
+  <div class="cmd">npx oceanbus start</div>
+  <p>窗口会自动出现在 Console 的活跃列表中。</p>
+</div>
+
+<h2>💡 常见问题</h2>
+
+<p><strong>Q: 需要登录吗？</strong><br>
+A: 不需要。打开页面即用。</p>
+
+<p><strong>Q: 清除浏览器缓存会怎样？</strong><br>
+A: 身份丢失，重新绑定即可。绑定关系在 Agent 侧有记录。</p>
+
+<p><strong>Q: 别人拿到我的 OB 地址能做什么？</strong><br>
+A: 能发消息给你。不能读你的消息（端到端加密）。OB 地址是收件地址，不是密码。</p>
+
+<p><strong>Q: 为什么有两个 Agent 列表？</strong><br>
+A: 「Agent 列表」是绑定的机器（一台电脑 = 一个 Agent）。「活跃窗口」是该机器上打开的 CC 窗口。你可以绑定多台机器。</p>
+
+<p><strong>Q: 窗口离线了还能发消息吗？</strong><br>
+A: 可以。消息会缓存在 OB mailbox 中，窗口重新上线后自动收到。</p>
+
+<hr>
+<p style="font-size:12px;color:#475569;text-align:center">
+  OceanBus Console v0.1 · <a href="https://github.com/ryanbihai/oceanbus-monorepo">GitHub</a>
+</p>
+
+</body>
+</html>

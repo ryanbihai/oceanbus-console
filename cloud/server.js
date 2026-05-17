@@ -19,7 +19,6 @@ const os = require("os");
 const PORT = parseInt(process.env.OB_CONSOLE_PORT || "3456", 10);
 const H5_DIR = path.join(__dirname, "..", "h5");
 const STATE_DIR = path.join(os.homedir(), ".oceanbus-console");
-const CREDS_FILE = path.join(STATE_DIR, "cloud-creds.json");
 
 // ── MIME ───────────────────────────────────────────────────
 const MIME = {
@@ -73,6 +72,13 @@ function getWindows(user) {
   return [...user.windows.entries()].map(([name, w]) => ({ name, ...w }));
 }
 
+function sseBroadcastForUser(user, event, data) {
+  const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  for (const c of user.sse) {
+    try { c.write(msg); } catch { user.sse.delete(c); }
+  }
+}
+
 // ── Static serve ────────────────────────────────────────────
 function serveStatic(req, res) {
   let fp = req.url === "/" ? "/index.html" : req.url;
@@ -97,26 +103,68 @@ function serveStatic(req, res) {
 async function main() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
 
-  // 1. Cloud OB identity
-  let creds = loadJSON(CREDS_FILE);
-  if (!creds) {
-    log("Creating Cloud OB identity...");
-    const oceanbus = await import("oceanbus");
-    const ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
-    const reg = await ob.createIdentity();
-    const openid = await ob.getAddress();
-    creds = { agent_id: reg.agent_id, api_key: reg.api_key, openid };
-    saveJSON(CREDS_FILE, creds);
-    await ob.destroy();
-  }
-  log(`Cloud OB: ${creds.openid.slice(0, 8)}...`);
-
-  // 2. OB sender (for /api/send fallback — all other comms via HTTP)
+  // 1. Cloud OB identity (fresh each restart — like the SDK test)
+  log("Creating Cloud OB identity...");
   const oceanbus = await import("oceanbus");
-  const ob = await oceanbus.createOceanBus({
-    keyStore: { type: "memory" },
-    identity: { agent_id: creds.agent_id, api_key: creds.api_key, openid: creds.openid },
+  const ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
+  const reg = await ob.createIdentity();
+  const cloudOpenId = await ob.getAddress();
+  log(`Cloud OB: ${cloudOpenId.slice(0, 8)}...`);
+
+  // 2. OB listener — Agent ↔ Cloud real-time message channel
+  ob.startListening(async (msg) => {
+    if (msg.from_openid === cloudOpenId) return;
+    let parsed;
+    try { parsed = JSON.parse(msg.content || "{}"); } catch { parsed = { text: msg.content || "" }; }
+    const action = parsed.action || parsed.type;
+    const h5openid = parsed.h5_openid || "";
+    const user = h5openid ? getUser(h5openid) : null;
+    if (!user) return;
+
+    switch (action) {
+      case "window-open": {
+        const win = parsed.window || "";
+        if (win) {
+          user.windows.set(win, { lastBeat: Date.now(), cwd: parsed.cwd || "", status: "online" });
+          if (parsed.agent_openid) {
+            const peerName = parsed.agent_name || win;
+            user.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
+            sseBroadcastForUser(user, "bound", { agent: peerName, openid: parsed.agent_openid });
+          }
+          sseBroadcastForUser(user, "windows", getWindows(user));
+          log(`[ob] window + ${win}`);
+        }
+        break;
+      }
+      case "heartbeat": {
+        const win = parsed.window || "";
+        const newName = parsed.newname;
+        if (newName && newName !== win && user.windows.has(win) && !user.windows.has(newName)) {
+          user.windows.set(newName, { ...user.windows.get(win), lastBeat: Date.now(), status: "online" });
+          user.windows.delete(win);
+        } else if (user.windows.has(win)) {
+          user.windows.get(win).lastBeat = Date.now();
+          user.windows.get(win).status = "online";
+        }
+        break;
+      }
+      case "window-close": {
+        user.windows.delete(parsed.window || "");
+        sseBroadcastForUser(user, "windows", getWindows(user));
+        break;
+      }
+      case "message":
+      case "reply": {
+        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
+        sseBroadcastForUser(user, "message", {
+          window: parsed.window || "", text: parsed.text || "",
+          from: "agent", time, msg_id: parsed.msg_id || "",
+        });
+        break;
+      }
+    }
   });
+  log("OB listener started");
 
   // 3. HTTP Server
   const server = http.createServer(async (req, res) => {
@@ -152,19 +200,11 @@ async function main() {
         return;
       }
 
-      // ── SSE broadcast helper ──────────────────────────────
-      function sseBroadcast(user, event, data) {
-        const msg = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-        for (const c of user.sse) {
-          try { c.write(msg); } catch { user.sse.delete(c); }
-        }
-      }
-
       // ── API: Status ──────────────────────────────────────
       if (req.method === "GET" && url.pathname === "/api/status") {
         return json(res, {
           ok: true,
-          cloudOpenId: creds.openid.slice(0, 12) + "...",
+          cloudOpenId: cloudOpenId.slice(0, 12) + "...",
           users: users.size,
           uptime: process.uptime(),
         });
@@ -172,7 +212,7 @@ async function main() {
 
       // ── API: Identity ─────────────────────────────────────
       if (req.method === "GET" && url.pathname === "/api/identity") {
-        return json(res, { openid: creds.openid });
+        return json(res, { openid: cloudOpenId });
       }
 
       // Static files don't need user context
@@ -221,7 +261,7 @@ async function main() {
         // Try OB send
         ob.send(peer.openid, JSON.stringify(msgObj)).catch(() => {});
 
-        sseBroadcast(user, "message", { window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" });
+        sseBroadcastForUser(user, "message", { window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" });
         return json(res, { ok: true });
       }
 
@@ -230,7 +270,7 @@ async function main() {
         const { window: win, text } = body;
         if (!text) return json(res, { error: "missing text" }, 400);
         const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        sseBroadcast(user, "message", { window: win || "", text, from: "agent", time, msg_id: body.msg_id || "" });
+        sseBroadcastForUser(user, "message", { window: win || "", text, from: "agent", time, msg_id: body.msg_id || "" });
         log(`[reply] → H5 [${win}] ${text.slice(0, 40)}`);
         return json(res, { ok: true });
       }
@@ -253,10 +293,10 @@ async function main() {
           if (body.agent_openid) {
             const peerName = body.agent_name || win;
             user.peers[peerName] = { openid: body.agent_openid, boundAt: new Date().toISOString() };
-            sseBroadcast(user, "bound", { agent: peerName, openid: body.agent_openid });
+            sseBroadcastForUser(user, "bound", { agent: peerName, openid: body.agent_openid });
           }
           log(`[window] + ${win}`);
-          sseBroadcast(user, "windows", getWindows(user));
+          sseBroadcastForUser(user, "windows", getWindows(user));
           return json(res, { ok: true, action: "window-open" });
         }
 
@@ -270,13 +310,13 @@ async function main() {
             user.windows.get(win).lastBeat = Date.now();
             user.windows.get(win).status = "online";
           }
-          sseBroadcast(user, "windows", getWindows(user));
+          sseBroadcastForUser(user, "windows", getWindows(user));
           return json(res, { ok: true, action: "heartbeat" });
         }
 
         if (action === "window-close" && win) {
           user.windows.delete(win);
-          sseBroadcast(user, "windows", getWindows(user));
+          sseBroadcastForUser(user, "windows", getWindows(user));
           return json(res, { ok: true, action: "window-close" });
         }
 
@@ -294,7 +334,7 @@ async function main() {
 
   server.listen(PORT, () => {
     log(`Multi-user Cloud: http://localhost:${PORT}`);
-    log(`  Identity: ${creds.openid.slice(0, 8)}...`);
+    log(`  Identity: ${cloudOpenId.slice(0, 8)}...`);
     log(`  H5: http://localhost:${PORT}`);
     log(`  Guide: http://localhost:${PORT}/guide.html`);
   });

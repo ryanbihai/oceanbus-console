@@ -52,13 +52,10 @@
 <div class="modal-overlay hidden" id="pairing-modal">
   <div class="modal">
     <h3>🔗 绑定 Agent</h3>
-    <p class="info">在 Agent 终端运行以下命令：</p>
-    <div class="cmd" id="pairing-cmd">npx oceanbus start --code ??????</div>
+    <p class="info">在 Agent 终端复制运行：</p>
+    <div class="cmd" id="pairing-cmd">npx oceanbus start --peer ...</div>
     <button class="btn btn-primary btn-sm" onclick="copyCmd()">📋 复制命令</button>
-    <p style="margin-top:12px;font-size:14px;color:#94a3b8">— 或者 —</p>
-    <p class="info">配对码（手动输入）：</p>
-    <div class="code" id="pairing-code">------</div>
-    <p class="info">有效期 10 分钟</p>
+    <p class="info" style="margin-top:12px">复制后粘贴到 CC 窗口即可</p>
     <button class="btn btn-outline btn-sm" onclick="closePairing()">关闭</button>
   </div>
 </div>

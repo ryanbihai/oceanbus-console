@@ -94,16 +94,23 @@ function selectWindow(name) {
 }
 
 // ── Messages ──────────────────────────────────────────────────
-const messageStore = {}; // windowName → [{from, text, time}]
+const messageStore = {}; // windowName → [{from, text, time, id}]
+const seenMsgIds = new Set();  // dedup across SSE + local add
+let msgIdCtr = 0;
 
 function onMsg(data) {
+  // Dedup by msg_id (SSE may echo our own messages back)
+  if (data.msg_id && seenMsgIds.has(data.msg_id)) return;
+  if (data.msg_id) seenMsgIds.add(data.msg_id);
+
   const win = data.window || "";
   if (!messageStore[win]) messageStore[win] = [];
-  messageStore[win].push({ from: data.from, text: data.text, time: data.time || now() });
+  const mid = data.msg_id || ("sse_" + (++msgIdCtr));
+  messageStore[win].push({ from: data.from, text: data.text, time: data.time || now(), id: mid });
 
   // If viewing this window, render
   if (activeWindow === win) {
-    addBubble(data.from === "h5" ? "h5" : "agent", data.text, data.time);
+    addBubble(data.from === "h5" ? "h5" : "agent", data.text, data.time, mid);
   }
 
   // If not viewing any window, auto-switch
@@ -146,13 +153,15 @@ async function sendMsg() {
   if (!text) return;
   input.value = "";
 
-  addBubble("h5", text, now());
+  const mid = "h5_" + (++msgIdCtr);
+  seenMsgIds.add(mid);
+  addBubble("h5", text, now(), mid);
 
   try {
     await api("/api/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ window: activeWindow, text, agent: peerNames[0] }),
+      body: JSON.stringify({ window: activeWindow, text, agent: peerNames[0], msg_id: mid }),
     });
   } catch (e) { toast("发送失败: " + e.message); }
 }
@@ -176,16 +185,14 @@ function renderMain() {
 // ── Pairing ─────────────────────────────────────────────────────
 async function startPairing() {
   $("pairing-modal").classList.remove("hidden");
-  $("pairing-code").textContent = "生成中...";
-  $("pairing-cmd").textContent = "";
+  $("pairing-cmd").textContent = "加载中...";
 
   try {
-    const r = await api("/api/pairing", { method: "POST" });
-    $("pairing-code").textContent = r.code;
-    $("pairing-cmd").textContent = `npx oceanbus start --code ${r.code}`;
+    const id = await api("/api/identity");
+    $("pairing-cmd").textContent = `npx oceanbus start --peer ${id.openid}`;
   } catch (e) {
-    $("pairing-code").textContent = "失败";
-    toast("生成配对码失败");
+    $("pairing-cmd").textContent = "加载失败";
+    toast("获取身份失败");
   }
 }
 

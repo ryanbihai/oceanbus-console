@@ -271,7 +271,7 @@ async function main() {
         // Try OB send
         ob.send(peer.openid, JSON.stringify(msgObj)).catch(() => {});
 
-        sseBroadcast("message", { window: win || "", text, from: "h5", time });
+        sseBroadcast("message", { window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" });
         return json(res, { ok: true });
       }
 

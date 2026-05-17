@@ -9,6 +9,6 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
-    "oceanbus": "^0.10.7"
+    "oceanbus": "^0.11.0"
   }
 }

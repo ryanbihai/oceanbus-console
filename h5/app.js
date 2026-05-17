@@ -306,22 +306,17 @@ function copyCmd() {
 }
 
 function fallbackCopy(text) {
-  // execCommand('copy') fallback — works on plain HTTP
   const ta = document.createElement('textarea');
   ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.left = '-9999px';
-  ta.style.top = '-9999px';
+  // Use visibility/opacity instead of off-screen positioning (more reliable on mobile)
+  ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none;width:1px;height:1px';
+  ta.readOnly = true;
   document.body.appendChild(ta);
-  ta.focus();
   ta.select();
-  try {
-    document.execCommand('copy');
-    toast('已复制!');
-  } catch {
-    toast('复制失败，请手动复制');
-  }
+  ta.setSelectionRange(0, text.length);
+  const ok = document.execCommand('copy');
   document.body.removeChild(ta);
+  toast(ok ? '已复制!' : '复制失败，请手动复制');
 }
 
 // ── Sidebar ──────────────────────────────────────────────────

@@ -276,15 +276,8 @@ async function main() {
         return json(res, { ok: true });
       }
 
-      // ── API: Reply (CC AI → H5, transitional) ─────────────
-      if (req.method === "POST" && url.pathname === "/api/reply") {
-        const { window: win, text } = body;
-        if (!text) return json(res, { error: "missing text" }, 400);
-        const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
-        sseBroadcastForUser(user, "message", { window: win || "", text, from: "agent", time, msg_id: body.msg_id || "" });
-        log(`[reply] → H5 [${win}] ${text.slice(0, 40)}`);
-        return json(res, { ok: true });
-      }
+      // /api/reply removed — all Agent→Cloud communication now goes through OB.
+      // CC AI uses reply-ob.cjs → OB send → Cloud OB listener handles 'reply' action → SSE → H5
 
       // ── Static ─────────────────────────────────────────────
       serveStatic(req, res);

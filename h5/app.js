@@ -292,7 +292,8 @@ async function startPairing() {
 
   try {
     const gwUrl = window.location.origin;
-    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl} --temp-identity`;
+    // Save peer globally (for future auto-connect) and start with per-window identity
+    $("pairing-cmd").textContent = `mkdir -p ~/.oceanbus && echo '{"peer":"${myOpenId}"}' > ~/.oceanbus/console-peer.json && echo '{"url":"${gwUrl}"}' > ~/.oceanbus/console-gateway.json && npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl} --temp-identity`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

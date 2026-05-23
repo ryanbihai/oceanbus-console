@@ -222,9 +222,10 @@ async function main() {
           if (msg.from_openid === openid) return;
           let parsed;
           try { parsed = JSON.parse(msg.content || '{}'); } catch { parsed = { text: msg.content || '' }; }
+          log(`[ob:${openid.slice(0,6)}] rx action=${parsed.action||parsed.type} from=${msg.from_openid?.slice(0,8)} payload_h5id=${(parsed.h5_openid||'').slice(0,8)} expect=${h5openid.slice(0,8)}`);
           // Only process messages meant for THIS user (by payload h5_openid)
           const payloadH5Id = parsed.h5_openid || '';
-          if (payloadH5Id !== h5openid) return;
+          if (payloadH5Id !== h5openid) { log(`[ob:${openid.slice(0,6)}] SKIP — h5_openid mismatch`); return; }
           const action = parsed.action || parsed.type;
           if (!user) return;
 

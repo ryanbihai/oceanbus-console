@@ -81,9 +81,16 @@ node agent-daemon.cjs reply --text "回复内容"
 node agent-daemon.cjs inbox --clear
 ```
 
-## 手动安装（daemon 不存在时）
+## 首次安装（用户不存在 daemon 时）
 
 指引用户：
-1. `npm install -g oceanbus@latest`
-2. 安装 CC 插件：`/plugin install oceanbus-console@oceanbus-plugins`
-3. 或克隆仓库手动安装（见 README.md）
+1. `/plugin install oceanbus-console@oceanbus-plugins`
+2. 安装后每个新 CC 窗口自动启动 agent-daemon
+3. SDK 缺失时自动安装，无需手动操作
+
+### 手动安装（插件市场不可用时）
+
+```bash
+git clone https://github.com/ryanbihai/oceanbus-console.git ~/.claude/plugins/oceanbus-console
+```
+然后编辑 `~/.claude/settings.json`，在 `enabledPlugins` 中添加 `"oceanbus-console": true`。

@@ -6,15 +6,7 @@
 
 ---
 
-## 安装（2 分钟）
-
-### 1. 安装 SDK
-
-```bash
-npm install -g oceanbus@latest
-```
-
-### 2. 安装 CC 插件
+## 安装（1 步，10 秒）
 
 在 Claude Code 中输入：
 
@@ -22,19 +14,19 @@ npm install -g oceanbus@latest
 /plugin install oceanbus-console@oceanbus-plugins
 ```
 
-**完成。** 之后每个 CC 窗口打开时，OceanBus Agent 自动在后台启动。
+**完成。** 之后每个 CC 窗口打开时，OceanBus Agent 自动在后台启动。SDK 缺失时自动安装，无需手动操作。
 
 ### 手动安装（插件市场不可用时）
 
 ```bash
-# 克隆仓库
 git clone https://github.com/ryanbihai/oceanbus-console.git ~/.claude/plugins/oceanbus-console
-
-# 注册插件：编辑 ~/.claude/settings.json，在 enabledPlugins 中添加：
-#   "oceanbus-console": true
 ```
 
-> 插件市场条目待创建。目前请使用手动安装方式。
+然后编辑 `~/.claude/settings.json`，在 `enabledPlugins` 中添加：
+
+```json
+"oceanbus-console": true
+```
 
 ---
 

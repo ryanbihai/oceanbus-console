@@ -29,6 +29,7 @@ const subCmd = process.argv[2];
 if (subCmd === 'stop')     { stopDaemon(); process.exit(0); }
 if (subCmd === 'status')   { statusDaemon(); process.exit(0); }
 if (subCmd === 'context')  { statusDaemon(); process.exit(0); }
+if (subCmd === 'hook-status') { hookStatus(); process.exit(0); }
 if (subCmd === 'inbox')    { inboxDaemon(); process.exit(0); }
 if (subCmd === 'ack')      { ackDaemon(); process.exit(0); }
 if (subCmd === 'reply')    { replyDaemon().then(() => process.exit(0)).catch(e => { console.log(JSON.stringify({error:e.message})); process.exit(1); }); /* async exit handled in promise */ }
@@ -130,6 +131,22 @@ function statusDaemon() {
     online: true, window: active.name, pid: active.pid,
     peer: peer ? 'bound' : 'unpaired', inbox: inboxCount,
   }) : `OceanBus Agent: online | window: ${active.name} | peer: ${peer ? 'bound' : 'unpaired'} | inbox: ${inboxCount}`);
+}
+
+// ── Hook Status (user-friendly one-liner for CC SessionStart) ─
+function hookStatus() {
+  const active = findActiveWindow();
+  if (!active) { console.log('OceanBus: offline — open H5 Board to pair'); return; }
+  const peer = loadProjectPeer();
+  const ibPath = inboxPath(active.name);
+  let inboxCount = 0;
+  if (fs.existsSync(ibPath)) inboxCount = fs.readFileSync(ibPath, 'utf-8').split('\n').filter(l => l.trim()).length;
+  if (active && peer) {
+    const hint = inboxCount > 0 ? ` | ${inboxCount} new Board messages` : '';
+    console.log(`OceanBus: ${active.name} ● online${hint}`);
+  } else if (active) {
+    console.log(`OceanBus: ${active.name} ● online | peer: unpaired — open H5 Board to pair`);
+  }
 }
 
 // ── Inbox ──────────────────────────────────────────────────
@@ -238,14 +255,20 @@ async function replyDaemon() {
 // Agent (always foreground) — only when no subcommand
 // ═══════════════════════════════════════════════════════════
 
+if (subCmd === 'hook-status') { hookStatus(); process.exit(0); }
 if (subCmd) return; // subcommand handled above (sync: process.exit already, reply: async exit in promise)
 
-const yargs = require('yargs');
-const argv = yargs(process.argv.slice(2))
-  .option('name', { type: 'string' })
-  .option('peer', { type: 'string' })
-  .option('temp-identity', { type: 'boolean', default: false })
-  .parse();
+// Manual argv parsing — no dependencies
+function parseArgv(args) {
+  const opts = { name: '', peer: '', 'temp-identity': false };
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '--name' && i + 1 < args.length) { opts.name = args[++i]; }
+    else if (args[i] === '--peer' && i + 1 < args.length) { opts.peer = args[++i]; }
+    else if (args[i] === '--temp-identity') { opts['temp-identity'] = true; }
+  }
+  return opts;
+}
+const argv = parseArgv(process.argv.slice(2));
 
 const finalWin = windowName();
 

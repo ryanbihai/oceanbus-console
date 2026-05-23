@@ -8,7 +8,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/version-check.cjs\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; command -v cygpath >/dev/null 2>&1 && { _W=$(cygpath -w \"$_P\" 2>/dev/null); [ -n \"$_W\" ] && _P=\"$_W\"; }; node \"$_P/scripts/version-check.cjs\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":true}'",
             "timeout": 5
           }
         ]
@@ -21,13 +21,13 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/agent-daemon.cjs\" & RC=$?; if [ $RC -ne 0 ]; then node \"$_P/scripts/health-check.cjs\" track-failure \"daemon start failed (exit $RC)\" 2>/dev/null; else node \"$_P/scripts/health-check.cjs\" track-success 2>/dev/null; fi; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; command -v cygpath >/dev/null 2>&1 && { _W=$(cygpath -w \"$_P\" 2>/dev/null); [ -n \"$_W\" ] && _P=\"$_W\"; }; node \"$_P/scripts/agent-daemon.cjs\" & RC=$?; echo '{\"continue\":true,\"suppressOutput\":true}'",
             "timeout": 30
           },
           {
             "type": "command",
             "shell": "bash",
-            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; sleep 3; S=$(node \"$_P/scripts/agent-daemon.cjs\" status --json 2>/dev/null); echo \"$S\" | node -e \"const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); if(s.online && s.peer==='bound'){ const hint = s.inbox > 0 ? ' | '+s.inbox+' new Board messages' : ''; console.log('OceanBus: '+s.window+' ● online'+hint); } else if(s.online){ console.log('OceanBus: '+s.window+' ● online | peer: unpaired — open H5 Board to pair'); } else { console.log('OceanBus: offline — open H5 Board to pair'); }\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":false}'",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; command -v cygpath >/dev/null 2>&1 && { _W=$(cygpath -w \"$_P\" 2>/dev/null); [ -n \"$_W\" ] && _P=\"$_W\"; }; sleep 3; node \"$_P/scripts/agent-daemon.cjs\" hook-status 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":false}'",
             "timeout": 10
           }
         ]
@@ -39,7 +39,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/agent-daemon.cjs\" stop 2>&1; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; command -v cygpath >/dev/null 2>&1 && { _W=$(cygpath -w \"$_P\" 2>/dev/null); [ -n \"$_W\" ] && _P=\"$_W\"; }; node \"$_P/scripts/agent-daemon.cjs\" stop 2>&1; echo '{\"continue\":true,\"suppressOutput\":true}'",
             "timeout": 15
           }
         ]

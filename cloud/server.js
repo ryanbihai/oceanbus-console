@@ -19,6 +19,7 @@ const os = require("os");
 const PORT = parseInt(process.env.OB_CONSOLE_PORT || "3456", 10);
 const H5_DIR = path.join(__dirname, "..", "h5");
 const STATE_DIR = path.join(os.homedir(), ".oceanbus-console");
+const STATE_FILE = path.join(STATE_DIR, "sessions.json");
 
 // ── MIME ───────────────────────────────────────────────────
 const MIME = {
@@ -51,18 +52,16 @@ function parseBody(req) {
 
 // ── Multi-user state ────────────────────────────────────────
 const users = new Map(); // h5OpenId → { peers, windows, sse, boardOpenId }
-let cloudOpenId = ""; // set after OB identity creation
+let proxyId = ""; // Board proxy OB identity — Cloud listens as this, Agents send to this
 
-function deriveBoardOpenId(cloudId, uuid) {
-  return require('crypto').createHash('sha256').update(cloudOpenId + ':' + uuid).digest('hex');
+function deriveBoardId(proxyUuid, uuid) {
+  return require('crypto').createHash('sha256').update(proxyUuid + ':' + uuid).digest('hex');
 }
 
 function getUser(h5OpenId) {
-  // Bootstrapping: if user connects with UUID before openid is assigned,
-  // derive the openid and migrate to openid-based key.
   let key = h5OpenId;
-  if (h5OpenId.length < 40 && cloudOpenId) {
-    const derived = deriveBoardOpenId(cloudOpenId, h5OpenId);
+  if (h5OpenId.length < 40 && proxyId) {
+    const derived = deriveBoardId(proxyId, h5OpenId);
     if (users.has(h5OpenId)) {
       const existing = users.get(h5OpenId);
       users.delete(h5OpenId);
@@ -75,6 +74,7 @@ function getUser(h5OpenId) {
     users.set(key, {
       peers: {},
       windows: new Map(),
+      windowAgents: {},
       sse: new Set(),
       boardOpenId: key,
     });
@@ -121,17 +121,43 @@ function serveStatic(req, res) {
 async function main() {
   fs.mkdirSync(STATE_DIR, { recursive: true });
 
-  // 1. Cloud OB identity (fresh each restart)
-  log("Creating Cloud OB identity...");
+  // 1. Cloud OB identity (persisted across restarts)
   const oceanbus = await import("oceanbus");
-  const ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
-  await ob.createIdentity();
-  cloudOpenId = await ob.getAddress();
-  log(`Cloud OB: ${cloudOpenId.slice(0, 8)}...`);
+  const CLOUD_IDENTITY_FILE = path.join(STATE_DIR, "cloud-identity.json");
+  const savedIdentity = loadJSON(CLOUD_IDENTITY_FILE);
+  let ob;
+  if (savedIdentity?.agent_id && savedIdentity?.encryption_key) {
+    log("Loading persisted Cloud OB identity...");
+    ob = await oceanbus.createOceanBus({
+      keyStore: { type: "memory" },
+      identity: { agent_id: savedIdentity.agent_id, api_key: savedIdentity.api_key, openid: savedIdentity.openid, encryption_key: savedIdentity.encryption_key },
+    });
+    proxyId = savedIdentity.openid || await ob.getAddress();
+    log(`Cloud OB: ${proxyId.slice(0, 8)}... (persisted)`);
+  } else {
+    log("Creating new Cloud OB identity...");
+    ob = await oceanbus.createOceanBus({ keyStore: { type: "memory" } });
+    await ob.createIdentity();
+    proxyId = await ob.getAddress();
+    const state = ob.identity.exportState();
+    saveJSON(CLOUD_IDENTITY_FILE, { agent_id: state.agent_id, api_key: state.api_key, openid: proxyId, encryption_key: state.encryption_key });
+    log(`Cloud OB: ${proxyId.slice(0, 8)}... (new)`);
+  }
+
+  // 1b. Restore persisted state
+  const saved = loadJSON(STATE_FILE);
+  if (saved?.users) {
+    for (const [key, userData] of Object.entries(saved.users)) {
+      const user = getUser(key);
+      user.peers = userData.peers || {};
+      user.windowAgents = userData.windowAgents || {};
+    }
+    log(`restored ${Object.keys(saved.users).length} user(s)`);
+  }
 
   // 2. OB listener — Agent ↔ Cloud message channel
   ob.startListening(async (msg) => {
-    if (msg.from_openid === cloudOpenId) return;
+    if (msg.from_openid === proxyId) return;
     let parsed;
     try { parsed = JSON.parse(msg.content || "{}"); } catch { parsed = { text: msg.content || "" }; }
     const action = parsed.action || parsed.type;
@@ -146,6 +172,7 @@ async function main() {
         if (parsed.agent_openid) {
           const peerName = parsed.agent_name || win;
           user.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
+          user.windowAgents[win] = parsed.agent_openid;
           sseBroadcastForUser(user, "bound", { agent: peerName, openid: parsed.agent_openid });
         }
         sseBroadcastForUser(user, "windows", getWindows(user));
@@ -162,7 +189,9 @@ async function main() {
         user.windows.get(win).status = "online";
       }
     } else if (action === "window-close") {
-      user.windows.delete(parsed.window || "");
+      const closeWin = parsed.window || "";
+      user.windows.delete(closeWin);
+      delete user.windowAgents[closeWin];
       sseBroadcastForUser(user, "windows", getWindows(user));
     } else if (action === "message" || action === "reply") {
       const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
@@ -212,15 +241,10 @@ async function main() {
       if (req.method === "GET" && url.pathname === "/api/status") {
         return json(res, {
           ok: true,
-          cloudOpenId: cloudOpenId.slice(0, 12) + "...",
+          proxyId: proxyId.slice(0, 12) + "...",
           users: users.size,
           uptime: process.uptime(),
         });
-      }
-
-      // ── API: Identity ─────────────────────────────────────
-      if (req.method === "GET" && url.pathname === "/api/identity") {
-        return json(res, { openid: cloudOpenId });
       }
 
       // Static files don't need user context
@@ -231,7 +255,7 @@ async function main() {
 
       if (!user) {
         // API endpoints that don't need user context
-        if (req.method === "GET" && (url.pathname === "/api/status" || url.pathname === "/api/identity")) {
+        if (req.method === "GET" && url.pathname === "/api/status") {
           // continue below
         } else {
           return json(res, { error: "missing h5_openid. Create identity on H5 first." }, 400);
@@ -241,7 +265,7 @@ async function main() {
       // ── API: Board Address (per-user OB openid) ─────────────
       if (req.method === "GET" && url.pathname === "/api/my-address") {
         if (!user.boardOpenId) {
-          user.boardOpenId = deriveBoardOpenId(cloudOpenId, h5openid);
+          user.boardOpenId = deriveBoardId(proxyId, h5openid);
         }
         return json(res, { openid: user.boardOpenId });
       }
@@ -261,16 +285,17 @@ async function main() {
         const { window: win, text } = body;
         if (!text) return json(res, { error: "missing text" }, 400);
 
-        // Find first bound agent → OB send
-        const peerNames = Object.keys(user.peers);
-        if (peerNames.length === 0) return json(res, { error: "no bound agent" }, 400);
-        const peer = user.peers[peerNames[0]];
+        // Route by window name, fallback to first bound agent
+        const targetWin = win || "";
+        const agentOpenId = (targetWin && user.windowAgents[targetWin])
+          || (Object.keys(user.windowAgents).length > 0 ? Object.values(user.windowAgents)[0] : null);
+        if (!agentOpenId) return json(res, { error: "no bound agent for this window" }, 400);
 
         const time = new Date().toLocaleTimeString("zh-CN", { hour12: false });
         const msgObj = { action: "message", window: win || "", text, from: "h5", time, msg_id: body.msg_id || "", h5_openid: h5openid };
 
         // OB send — the only message path
-        ob.send(peer.openid, JSON.stringify(msgObj)).catch((e) => log(`OB send failed: ${e.message}`));
+        ob.send(agentOpenId, JSON.stringify(msgObj)).catch((e) => log(`OB send failed: ${e.message}`));
 
         sseBroadcastForUser(user, "message", { window: win || "", text, from: "h5", time, msg_id: body.msg_id || "" });
         return json(res, { ok: true });
@@ -290,15 +315,24 @@ async function main() {
 
   server.listen(PORT, () => {
     log(`Multi-user Cloud: http://localhost:${PORT}`);
-    log(`  Identity: ${cloudOpenId.slice(0, 8)}...`);
+    log(`  Identity: ${proxyId.slice(0, 8)}...`);
     log(`  H5: http://localhost:${PORT}`);
     log(`  Guide: http://localhost:${PORT}/guide.html`);
   });
 
-  // Heartbeat eviction
+  // Heartbeat eviction + session persistence
   setInterval(() => {
     for (const [, user] of users) getWindows(user);
-  }, 15_000).unref();
+    // Save state every 30s
+    const state = { savedAt: new Date().toISOString(), users: {} };
+    for (const [key, user] of users) {
+      state.users[key] = {
+        peers: user.peers,
+        windowAgents: user.windowAgents || {},
+      };
+    }
+    if (Object.keys(state.users).length > 0) saveJSON(STATE_FILE, state);
+  }, 30_000).unref();
 }
 
 main().catch(e => { log(`FATAL: ${e.message}`); process.exit(1); });

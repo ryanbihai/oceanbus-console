@@ -1,0 +1,49 @@
+{
+  "description": "OceanBus Console hooks — auto-start agent daemon, version check, error tracking",
+  "hooks": {
+    "Setup": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/version-check.cjs\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/agent-daemon.cjs\" & RC=$?; if [ $RC -ne 0 ]; then node \"$_P/scripts/health-check.cjs\" track-failure \"daemon start failed (exit $RC)\" 2>/dev/null; else node \"$_P/scripts/health-check.cjs\" track-success 2>/dev/null; fi; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "timeout": 30
+          },
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; sleep 3; S=$(node \"$_P/scripts/agent-daemon.cjs\" status --json 2>/dev/null); echo \"$S\" | node -e \"const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); if(s.online){ console.log('OceanBus: '+s.window+' ● online | peer: '+s.peer+' | inbox: '+s.inbox); } else { console.log('OceanBus: offline — open H5 Board to pair'); }\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":false}'",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; node \"$_P/scripts/agent-daemon.cjs\" stop 2>&1; echo '{\"continue\":true,\"suppressOutput\":true}'",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

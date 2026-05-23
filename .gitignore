@@ -1,0 +1,6 @@
+node_modules/
+.ob-console-peer.json
+.ob-console-gateway.json
+*.log
+cloud/node_modules/
+.DS_Store

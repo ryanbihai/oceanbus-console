@@ -48,27 +48,35 @@
   <strong>无需注册、无需登录。</strong> 打开即用。消息端到端加密。
 </div>
 
-<h2>首次设置（3 步，5 分钟）</h2>
+<h2>安装（做一次，2分钟）</h2>
 
 <div class="step">
-  <div class="num">第 1 步 · Agent 初始化</div>
-  <p>在 CC 窗口运行：</p>
-  <div class="cmd">npx oceanbus init</div>
-  <p>这会创建你的 OceanBus 身份（只需一次）。</p>
+  <div class="num">第 1 步 · 安装 SDK</div>
+  <p>在终端运行：</p>
+  <div class="cmd">npm install -g oceanbus@latest</div>
 </div>
 
 <div class="step">
-  <div class="num">第 2 步 · 绑定</div>
-  <p>打开 <a href="/">OceanBus Console</a>，点击「+ 绑定 Agent」。</p>
-  <p>复制命令，粘贴到 CC 终端运行：</p>
-  <div class="cmd">npx oceanbus start --peer xxxxx...</div>
-  <p>无需手动输入——复制粘贴即可。</p>
+  <div class="num">第 2 步 · 安装 CC 插件</div>
+  <p>在 Claude Code 窗口输入：</p>
+  <div class="cmd">/plugin install oceanbus-console@oceanbus-plugins</div>
+  <p>安装后每个 CC 窗口会自动启动 OceanBus Agent。</p>
+</div>
+
+<h2>首次配对（一个项目做一次）</h2>
+
+<div class="step">
+  <div class="num">第 1 步 · 复制命令</div>
+  <p>点击本页面右上角或左侧的「+ 绑定 Agent」。</p>
+  <p>点「📋 复制」把命令复制到剪贴板。</p>
+  <div class="cmd">npx oceanbus@latest start --peer xxxxx...</div>
 </div>
 
 <div class="step">
-  <div class="num">第 3 步 · 确认</div>
-  <p>运行命令后，CC 窗口会自动出现在 Console 的活跃窗口列表中。</p>
-  <p>点击窗口名称即可开始对话。</p>
+  <div class="num">第 2 步 · 粘贴到 CC</div>
+  <p>回到 CC 窗口，粘贴。回车。</p>
+  <p><strong>完成！</strong>CC 窗口立即出现在活跃窗口列表，状态 ●在线。</p>
+  <p>之后同项目的所有 CC 窗口<strong>自动连接，无需再粘贴</strong>。</p>
 </div>
 
 <h2>常见问题</h2>

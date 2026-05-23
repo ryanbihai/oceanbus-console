@@ -291,8 +291,7 @@ async function startPairing() {
   $("pairing-cmd").textContent = "加载中...";
 
   try {
-    const gwUrl = window.location.origin || "http://127.0.0.1:3456";
-    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl}`;
+    $("pairing-cmd").textContent = `npx oceanbus@latest start --peer ${myOpenId}`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

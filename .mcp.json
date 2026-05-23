@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "ob-console": {
+      "command": "node",
+      "args": ["scripts/mcp-server.cjs"],
+      "env": {}
+    }
+  }
+}

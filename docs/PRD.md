@@ -347,7 +347,175 @@ oceanbus-console/
 
 ---
 
-## 8. 开发教训
+## 8. Ontology — 实体与操作
+
+用通俗语言解释 OceanBus Console 里有什么东西，以及它们能做什么。
+
+### 8.1 实体（Entities）
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                    OceanBus Console 世界                      │
+│                                                              │
+│  ┌─────────┐     ┌─────────┐     ┌──────────────────────┐   │
+│  │  Board  │ ←→ │  Cloud  │ ←→ │  Agent (CC 窗口)      │   │
+│  │ (浏览器)│     │ (服务器) │     │ (你的电脑上的终端)    │   │
+│  └─────────┘     └─────────┘     └──────────────────────┘   │
+│       ↑                               ↑                      │
+│       └──── OB P2P 消息 ──────────────┘                      │
+│     (经过 Cloud 替 Board 收发，因为浏览器不能直接跑 OB)       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| 实体 | 通俗解释 | 标识符 | 持久化位置 |
+|------|---------|--------|-----------|
+| **Board** | 手机/电脑浏览器打开的 H5 页面，你的控制面板 | UUID（`ob-h5-openid`） | localStorage |
+| **Board OB 身份** | Board 在 OB P2P 网络里的"电话号码" | OB openid（如 `FA6UKkIA...`） | Cloud 磁盘 `users/<uuid>/ob-identity.json` |
+| **Agent** | 你电脑上一个 CC 终端窗口里的后台进程 | 窗口名（如 `cc-xxx-oceanbus-8180`） | `~/.oceanbus/windows/<name>/` |
+| **Agent OB 身份** | Agent 在 OB 网络里的"电话号码"（每个窗口独立） | OB openid | `credentials.json` |
+| **Cloud** | 阿里云上的服务进程，替 Board 收发 OB 消息 | （无自有 OB 身份） | `sessions.json` |
+| **Window** | Agent 在 Board 上的入口，一个窗口 = 一个聊天 | 窗口名 | Cloud 内存 + sessions.json |
+| **Message** | Board 和 Agent 之间的一条聊天消息 | msg_id | Board: localStorage, Agent: inbox.jsonl |
+| **Peer** | Agent 存的"Board 的电话号码"，知道消息发给谁 | Board OB openid | `console-peer.json` |
+| **h5id** | Board 的 UUID，Agent 发消息时带上，Cloud 用它识别用户 | UUID | `console-peer.json` 的 `h5id` 字段 |
+
+### 8.2 操作（Actions）
+
+每个实体能做什么，用一句话解释。
+
+#### Board（浏览器上的控制面板）
+
+| 操作 | 触发方式 | 干了什么 |
+|------|---------|---------|
+| **创建身份** | 首次打开页面 | 生成 UUID → Cloud 分配 OB 身份 → 存 localStorage |
+| **绑定 Agent** | 点「+ 绑定 Agent」 | 生成配对命令（含 Board OB 地址 + UUID） |
+| **查看窗口** | SSE 自动推送 | 实时显示哪些 CC 窗口在线 |
+| **发消息** | 输入文字回车 | POST `/api/send` → Cloud → OB → Agent |
+| **收消息** | SSE 自动推送 | Agent 的消息实时出现在聊天区 |
+| **切换窗口** | 点击侧栏窗口名 | 切换到该窗口的聊天记录 |
+| **查看帮助** | 点 `?` | 显示使用说明 |
+
+#### Agent（CC 窗口后台进程）
+
+| 操作 | 子命令 / 事件 | 干了什么 |
+|------|-------------|---------|
+| **上线** | daemon 启动时自动 | 发 `window-open`（告诉 Board 我来了）+ 发欢迎消息 `👋 窗口名 上线了！` |
+| **心跳** | 每 15 秒自动 | 发 `heartbeat`，告诉 Cloud 我还活着，顺便报告窗口名是否变了 |
+| **下线** | daemon 停止时自动 | 发 `window-close`，Board 上该窗口变灰 |
+| **收消息** | OB listener 自动 | 收到 Board 发的消息 → 写入 inbox.jsonl → 发自动回执 `已收到` |
+| **回复消息** | `reply --text "..."` | 通过 OB 发送回复到 Board |
+| **查看收件箱** | `inbox [--clear]` | 读取未处理的消息列表 |
+| **清空收件箱** | `ack` | 标记所有消息已处理 |
+| **查看状态** | `status [--json]` | 检查 daemon 是否在线、peer 是否绑定、收件箱消息数 |
+| **实时监听** | `inbox-monitor` | 持续输出新消息 JSON 到 stdout（给 CC Monitor 用） |
+| **停止** | `stop` | 杀掉 daemon 进程，清理锁文件 |
+
+#### Cloud（服务器后台进程）
+
+| 操作 | 触发方式 | 干了什么 |
+|------|---------|---------|
+| **创建 Board OB 身份** | Board 调 `/api/my-address` | 生成 OB keypair → 持久化到磁盘 → 开始监听 |
+| **接收 OB 消息** | OB listener 自动 | 收到 Agent 发的消息 → 解析 `h5_openid` → 路由到正确的 Board 用户 → SSE 推送 |
+| **发送 OB 消息** | Board 调 `/api/send` | 用 Board 的 OB 身份发送消息到目标 Agent |
+| **注册窗口** | 收到 `window-open` | 记录窗口名 → 映射 Agent OB 地址 → SSE 通知 Board |
+| **心跳处理** | 收到 `heartbeat` | 更新心跳时间 → 检测窗口改名 → Cloud 重启后自动恢复注册 |
+| **注销窗口** | 收到 `window-close` | 移除窗口 → SSE 通知 Board |
+| **消息转发** | 收到 `message` / `reply` | 直接 SSE 推送给 Board，不存盘 |
+| **持久化状态** | 每 30 秒自动 | 保存用户 peers 和 windowAgents 到 sessions.json |
+| **恢复状态** | 启动时自动 | 从 sessions.json 恢复用户数据，从磁盘恢复所有 Board OB 身份 |
+
+### 8.3 消息流（端到端）
+
+#### 场景 A：CC 窗口打开 → Board 看到欢迎消息
+
+```
+Agent 启动
+  → ob.send(Board OB地址, { action: "window-open", h5_openid: "<UUID>" })
+    → Cloud 的 Board OB listener 收到
+      → 查找 users[UUID] → 注册窗口 → SSE 推 "windows" 事件
+        → Board 侧栏出现新窗口 ●在线
+
+  → ob.send(Board OB地址, { action: "message", text: "👋 窗口名 上线了！", h5_openid: "<UUID>" })
+    → Cloud 的 Board OB listener 收到
+      → SSE 推 "message" 事件
+        → Board 聊天区显示欢迎气泡
+```
+
+#### 场景 B：Board 发消息 → Agent 收到 → CC AI 回复
+
+```
+用户在 Board 输入 "你好"
+  → POST /api/send { h5_openid: "<UUID>", window: "窗口名", text: "你好" }
+    → Cloud 查找 windowAgents["窗口名"] → Agent OB 地址
+    → Cloud 用 Board OB 身份发送:
+      ob.send(Agent OB地址, { action: "message", text: "你好", from: "h5", h5_openid: "<UUID>" })
+        → Agent OB listener 收到
+          → 写入 inbox.jsonl
+          → 自动回复 "已收到" → Board
+
+CC AI 调用 ob_reply --text "你好！有什么可以帮你？"
+  → agent-daemon reply → ob.send(Board OB地址, { action: "reply", text: "你好！...", h5_openid: "<UUID>" })
+    → Cloud listener 收到 → SSE 推 "message" 事件
+      → Board 聊天区显示 Agent 回复
+```
+
+### 8.4 状态机
+
+#### Agent 生命周期
+
+```
+  [启动] → window-open → [在线]
+                             │
+                    heartbeat (每15s)
+                             │
+                    [接收消息] ←→ [回复消息]
+                             │
+                    window-close → [离线]
+```
+
+#### Board 连接生命周期
+
+```
+  [打开页面] → 加载 UUID → 获取 Board OB 地址 → SSE 连接 → [在线]
+                                                              │
+                                              收到 window-open → [显示窗口]
+                                                              │
+                                              收到 message → [显示消息]
+                                                              │
+                                              [关闭页面] → SSE 断开 → [离线]
+                                                              │
+                                              [重新打开] → SSE 重连 → [在线]
+                                                             (自动恢复窗口列表和历史消息)
+```
+
+#### Cloud 生命周期
+
+```
+  [启动] → 创建/加载 Cloud OB → 恢复 sessions.json → 恢复 Board OB 身份 → [就绪]
+                                                                              │
+                                                              收到 window-open → 注册窗口
+                                                              收到 message → 转发 SSE
+                                                              收到 heartbeat → 更新心跳
+                                                              收到 window-close → 注销窗口
+                                                                              │
+                                                            [重启] → 恢复状态 → [就绪]
+                                                                  (Agent heartbeat 自动重注册)
+```
+
+### 8.5 测试覆盖
+
+完整的回归测试套件：`scripts/test-all.cjs`
+
+覆盖所有 ontology action：Cloud 启动、Board 身份创建、Agent 上线(window-open)、欢迎消息、收消息(inbox)、回复(reply)、实时监听(inbox-monitor)、MCP 工具、reply-ob、持久化(sessions.json + h5id)、下线(stop + window-close)。
+
+运行方式：
+```bash
+cd oceanbus-console && node scripts/test-all.cjs
+```
+
+---
+
+## 9. 开发教训
 
 ### 8.1 OB SDK 多实例串扰
 

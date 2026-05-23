@@ -6,17 +6,18 @@
  *   cd oceanbus-console
  *   node scripts/test-all.cjs
  *
- * Tests every action/command. Daemon startup is verified via artifact checks.
+ * Tests every ontology action. Daemon startup is verified via artifact checks.
  * MCP, reply-ob, subcommands tested via direct invocation.
  *
  * Sections:
  *   A. Cloud (5 tests)  — startup, /api/identity, /api/my-address, /api/peers, /api/windows
- *   B. Subcommands (9)  — status, inbox, inbox --clear, ack, reply, stop, artifact checks
- *   C. Message Flow (5) — H5→Cloud→Agent, inbox verify, ack verify, reply verify
+ *   B. Daemon (8 tests) — startup, credentials, lock, window-online, welcome-msg
+ *   C. Subcommands (8)  — status, inbox, inbox --clear, ack, reply, inbox-monitor
  *   D. MCP Server (6)   — ob_status, ob_inbox, ob_reply, ob_ack, tools/list, error handling
  *   E. reply-ob.cjs (1) — standalone reply script
- *   F. Persistence (1)  — sessions.json
- *   G. Stop+Cleanup (2) — daemon stop, lock cleanup
+ *   F. Messaging (3)    — H5→Agent, Agent→H5 (welcome), auto-ack
+ *   G. Persistence (1)  — sessions.json + h5id
+ *   H. Stop+Cleanup (2) — daemon stop, lock cleanup
  *
  * Prerequisites: npm install oceanbus (SDK must be available)
  */
@@ -75,10 +76,8 @@ function mcp(jsonRpc) {
 
 // ── Daemon startup (verified via artifacts, not stdout) ──
 function startDaemon() {
-  // Start daemon as background child - on Windows this may not work,
-  // so we also try the require-based approach as fallback
   const daemonProc = spawn(process.execPath, [
-    DAEMON, '--gateway-url', GATEWAY_URL, '--name', WIN,
+    DAEMON, '--gateway-url', GATEWAY_URL, '--peer', boardOpenId, '--name', WIN,
   ], {
     cwd: ROOT,
     env: { ...process.env, CLAUDE_CODE_SESSION_ID: 'test-suite' },
@@ -130,8 +129,8 @@ async function run() {
   boardOpenId ? ok('GET /api/my-address') : fail('/api/my-address', 'no openid');
   console.log(`  Board: ${boardOpenId.slice(0, 12)}...`);
 
-  // A3: Save peer, verify peers/windows endpoints
-  fs.writeFileSync(PEER_FILE, JSON.stringify({ peer: boardOpenId, savedAt: new Date().toISOString() }));
+  // A3: Save peer with h5id (required for correct user routing)
+  fs.writeFileSync(PEER_FILE, JSON.stringify({ peer: boardOpenId, h5id: H5_ID, savedAt: new Date().toISOString() }));
   const peers = await fetchJSON(`${GATEWAY_URL}/api/peers?h5_openid=${H5_ID}`);
   Array.isArray(peers) ? ok('GET /api/peers') : fail('/api/peers', String(peers));
   const windows = await fetchJSON(`${GATEWAY_URL}/api/windows?h5_openid=${H5_ID}`);
@@ -176,9 +175,18 @@ async function run() {
     l.procStart ? ok('lock has procStart') : fail('lock procStart', 'missing');
   }
 
-  // B2: Cloud sees the window
+  // B2: Cloud sees the window (window-open received)
   const cwAfter = await fetchJSON(`${GATEWAY_URL}/api/windows?h5_openid=${H5_ID}`);
   cwAfter.some(w => w.name === WIN && w.status === 'online') ? ok('Cloud shows window online') : fail('Cloud window', JSON.stringify(cwAfter));
+
+  // B3: Welcome message (Agent sends 👋 on startup)
+  await sleep(2000);
+  const ibWelcome = cmd(['inbox']);
+  try {
+    const msgs = JSON.parse(ibWelcome.stdout);
+    const welcome = msgs.find(m => m.text && m.text.includes('上线了'));
+    welcome ? ok('Welcome message received') : fail('Welcome msg', 'not found: ' + ibWelcome.stdout.slice(0, 100));
+  } catch { fail('Welcome msg', 'parse error'); }
 
   // ═══════════════════════════════════════════════════
   //  SECTION C: Subcommands
@@ -243,6 +251,16 @@ async function run() {
     const r = JSON.parse(replyR.stdout);
     r.ok ? ok('reply') : fail('reply', JSON.stringify(r));
   } catch { fail('reply', 'parse error: ' + replyR.stdout.slice(0, 60)); }
+
+  // C7: inbox-monitor (smoke test — spawn and verify ready signal, then kill)
+  const mon = spawn(process.execPath, [DAEMON, 'inbox-monitor'], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+  let monReady = false;
+  mon.stdout.on('data', (d) => {
+    try { if (JSON.parse(d.toString().split('\n')[0]).type === 'ready') monReady = true; } catch {}
+  });
+  await sleep(2000);
+  mon.kill('SIGTERM');
+  monReady ? ok('inbox-monitor (ready signal)') : fail('inbox-monitor', 'no ready signal');
 
   // ═══════════════════════════════════════════════════
   //  SECTION D: MCP Server

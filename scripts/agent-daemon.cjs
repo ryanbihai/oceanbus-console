@@ -60,6 +60,7 @@ function lockPath(winName)   { return path.join(OCEANBUS_DIR, `agent-${slugify(w
 function projectPeerFile() { return path.join(process.cwd(), '.ob-console-peer.json'); }
 function globalPeerFile()  { return path.join(OCEANBUS_DIR, 'console-peer.json'); }
 function loadProjectPeer() { const d = loadJSON(projectPeerFile()) || loadJSON(globalPeerFile()); return d?.peer || ''; }
+function loadProjectH5Id() { const d = loadJSON(projectPeerFile()) || loadJSON(globalPeerFile()); return d?.h5id || ''; }
 function projectGatewayFile() { return path.join(process.cwd(), '.ob-console-gateway.json'); }
 function globalGatewayFile()  { return path.join(OCEANBUS_DIR, 'console-gateway.json'); }
 function loadProjectGateway() { const d = loadJSON(projectGatewayFile()) || loadJSON(globalGatewayFile()); return d?.url || ''; }
@@ -216,6 +217,7 @@ async function replyDaemon() {
   if (!creds?.openid) { console.log('{"error":"no credentials"}'); process.exit(1); }
   const boardOpenId = loadProjectPeer();
   if (!boardOpenId) { console.log('{"error":"no peer (pair first)"}'); process.exit(1); }
+  const h5Id = loadProjectH5Id() || boardOpenId;
   const oceanbus = await import('oceanbus');
   const ob = await oceanbus.createOceanBus({
     keyStore: { type: 'memory' },
@@ -223,7 +225,7 @@ async function replyDaemon() {
   });
   try {
     await ob.send(boardOpenId, JSON.stringify({
-      action: 'reply', window: active.name, text: opts.text, h5_openid: boardOpenId, from: 'agent',
+      action: 'reply', window: active.name, text: opts.text, h5_openid: h5Id, from: 'agent',
       time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
     }));
     console.log(JSON.stringify({ ok: true }));
@@ -307,8 +309,9 @@ function isCC() {
   return false;
 }
 
-function saveProjectPeer(peer) {
+function saveProjectPeer(peer, h5id) {
   const data = { peer, savedAt: new Date().toISOString() };
+  if (h5id) data.h5id = h5id;
   saveJSON(projectPeerFile(), data);
   saveJSON(globalPeerFile(), data);
   log(`peer saved: ${peer.slice(0, 8)}...`);
@@ -401,14 +404,15 @@ async function main() {
   }
   const myAddr = await ob.getAddress();
 
-  // Peer
+  // Peer (Cloud OB address for routing) + h5id (Board UUID for user identification)
   let peerOpenId = argv.peer || '';
   if (!peerOpenId) peerOpenId = loadProjectPeer();
   if (!peerOpenId) peerOpenId = process.env.OB_CONSOLE_PEER || '';
-  if (argv.peer) saveProjectPeer(argv.peer);
+  const h5Id = loadProjectH5Id() || peerOpenId; // fallback: use peer as h5id for old pairing commands
+  if (argv.peer) saveProjectPeer(argv.peer, h5Id);
 
   log(`ob: ${myAddr.slice(0, 8)}...  window: ${finalWin}  mode: ${ccMode ? 'CC' : 'terminal'}  identity: ${tempIdentity ? 'temp' : 'persisted'}`);
-  if (peerOpenId) log(`peer: ${peerOpenId.slice(0, 8)}...`);
+  if (peerOpenId) log(`peer: ${peerOpenId.slice(0, 8)}...  h5id: ${h5Id.slice(0, 8)}...`);
 
   // Board OB is --peer value. Agent sends directly to it — Cloud proxies for browser.
   // No HTTP bootstrap needed. No Cloud OB. Just Board OB ↔ Agent OB.
@@ -418,7 +422,7 @@ async function main() {
     try {
       await ob.send(peerOpenId, JSON.stringify({
         action: 'window-open', window: finalWin, cwd: process.cwd(),
-        agent_name: finalWin, agent_openid: myAddr, agent_type: 'cc-window', h5_openid: peerOpenId,
+        agent_name: finalWin, agent_openid: myAddr, agent_type: 'cc-window', h5_openid: h5Id,
       }));
       log(`window-open → Board (${finalWin})`);
 
@@ -427,7 +431,7 @@ async function main() {
         window: finalWin,
         text: `👋 ${finalWin} 上线了！`,
         from: 'agent',
-        h5_openid: peerOpenId,
+        h5_openid: h5Id,
         time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
       })).catch(() => {});
     } catch (e) { log(`window-open failed: ${e.message}`); }
@@ -439,7 +443,7 @@ async function main() {
     ob.send(peerOpenId, JSON.stringify({
       action: 'heartbeat', window: finalWin,
       newname: cur !== finalWin ? cur : undefined,
-      agent_openid: myAddr, h5_openid: peerOpenId,
+      agent_openid: myAddr, h5_openid: h5Id,
     })).catch(() => {});
   }, 15_000) : null;
 
@@ -488,7 +492,7 @@ async function main() {
       if (parsed.from === 'h5' && peerOpenId) {
         ob.send(peerOpenId, JSON.stringify({
           action: 'reply', window: msgWindow || finalWin, text: '已收到',
-          from: 'agent', h5_openid: peerOpenId,
+          from: 'agent', h5_openid: h5Id,
           msg_id: parsed.msg_id ? 'ack_' + parsed.msg_id : undefined,
           time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
         })).catch(() => {});
@@ -512,7 +516,7 @@ async function main() {
           if (req.type === 'reply' && req.text && peerOpenId) {
             ob.send(peerOpenId, JSON.stringify({
               action: 'reply', window: req.window || finalWin, text: req.text,
-              h5_openid: peerOpenId, from: 'agent',
+              h5_openid: h5Id, from: 'agent',
               time: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
             })).catch(() => {});
           }
@@ -534,7 +538,7 @@ async function main() {
     releaseLock(finalWin);
     if (heartbeat) clearInterval(heartbeat);
     if (peerOpenId) {
-      try { await ob.send(peerOpenId, JSON.stringify({ action: 'window-close', window: finalWin, h5_openid: peerOpenId })); } catch {}
+      try { await ob.send(peerOpenId, JSON.stringify({ action: 'window-close', window: finalWin, h5_openid: h5Id })); } catch {}
       await new Promise(r => setTimeout(r, 200));
     }
     process.exit(0);

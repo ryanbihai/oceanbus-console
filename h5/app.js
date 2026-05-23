@@ -37,12 +37,10 @@ async function loadIdentity() {
 }
 
 async function loadBoardObId() {
-  // Board's real OB openid for Agent pairing
+  // Cloud's OB address for Agent pairing (--peer)
   let obId = localStorage.getItem("ob-board-openid");
-  // Migration: old SHA256 hashes are 64 hex chars, real OB openids are not
-  if (obId && obId.length !== 64) return obId;
+  if (obId) return obId;
 
-  // Fetch (or re-fetch after migration) from Cloud
   const uuid = localStorage.getItem("ob-h5-openid");
   if (!uuid) return '';
   try {
@@ -52,8 +50,8 @@ async function loadBoardObId() {
       localStorage.setItem("ob-board-openid", data.openid);
       return data.openid;
     }
-  } catch { /* Cloud unreachable, fall back */ }
-  return obId || '';
+  } catch {}
+  return '';
 }
 
 // ── Messages ──────────────────────────────────────────────────
@@ -301,8 +299,8 @@ async function startPairing() {
 
   try {
     const gwUrl = window.location.origin;
-    // --peer uses Board's real OB openid (myBoardObId), not the UUID
-    $("pairing-cmd").textContent = `mkdir -p ~/.oceanbus && echo '{"peer":"${myBoardObId}"}' > ~/.oceanbus/console-peer.json && echo '{"url":"${gwUrl}"}' > ~/.oceanbus/console-gateway.json && npx oceanbus@latest start --peer ${myBoardObId} --gateway-url ${gwUrl} --temp-identity`;
+    // --peer = Cloud's OB address (routing), h5id = Board UUID (user identification in payload)
+    $("pairing-cmd").textContent = `mkdir -p ~/.oceanbus && echo '{"peer":"${myBoardObId}","h5id":"${myOpenId}"}' > ~/.oceanbus/console-peer.json && echo '{"url":"${gwUrl}"}' > ~/.oceanbus/console-gateway.json && npx oceanbus@latest start --peer ${myBoardObId} --gateway-url ${gwUrl} --temp-identity`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

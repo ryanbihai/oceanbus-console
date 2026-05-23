@@ -18,6 +18,25 @@
 
 const path = require('path');
 const fs = require('fs');
+const cp = require('child_process');
+
+// Ensure global npm modules are resolvable (CC plugin runs from cache dir)
+(function addGlobalNodeModules() {
+  try {
+    const globalRoot = cp.execSync('npm root -g', { timeout: 5000, encoding: 'utf-8' }).trim();
+    if (globalRoot && !module.paths.includes(globalRoot)) {
+      module.paths.push(globalRoot);
+    }
+  } catch {}
+  // Also try common Windows global path
+  if (process.platform === 'win32') {
+    const appData = process.env.APPDATA || '';
+    const winGlobal = path.join(appData, 'npm', 'node_modules');
+    if (winGlobal && !module.paths.includes(winGlobal)) {
+      module.paths.push(winGlobal);
+    }
+  }
+})();
 const os = require('os');
 
 // ── Config ──────────────────────────────────────────────────

@@ -40,19 +40,19 @@ node agent-daemon.cjs inbox-monitor
 
 ## 首次配对
 
-当用户粘贴 `npx oceanbus@latest start --peer <uuid> --gateway-url <url>` 时：
+当用户粘贴 `npx oceanbus@latest start --peer <uuid> --gateway-url <url>` 时，
+**用户命令中已包含写 peer 文件的 echo 语句**（含 peer 和 h5id），不要覆盖它。
 
 1. 停止现有 daemon：`node agent-daemon.cjs stop`
-2. 将 peer 写入项目文件和全局文件：
+2. **不要覆盖 peer 文件** — 用户粘贴的命令已写入 `~/.oceanbus/console-peer.json`
+   （包含 `{"peer":"<obAddr>","h5id":"<uuid>"}` 两个字段，缺一不可）
+3. 如果 peer 文件不存在（非粘贴场景），需同时写入 peer 和 h5id：
    ```bash
-   # 项目级
-   echo '{"peer":"<uuid>","savedAt":"..."}' > .ob-console-peer.json
-   # 全局（之后所有项目自动连接，零操作）
-   echo '{"peer":"<uuid>","savedAt":"..."}' > ~/.oceanbus/console-peer.json
+   echo '{"peer":"<obAddr>","h5id":"<uuid>"}' > ~/.oceanbus/console-peer.json
    ```
-3. 保存 gateway URL：同上写入 `.ob-console-gateway.json` 和 `~/.oceanbus/console-gateway.json`
-4. 后台启动 daemon：`node agent-daemon.cjs &`
-5. 验证：`node agent-daemon.cjs status` → online
+4. 保存 gateway URL：`echo '{"url":"<gwUrl>"}' > ~/.oceanbus/console-gateway.json`
+5. 后台启动 daemon：`node agent-daemon.cjs &`
+6. 验证：`node agent-daemon.cjs status` → online
 
 ## 之后每次
 

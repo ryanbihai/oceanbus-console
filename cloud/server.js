@@ -222,48 +222,57 @@ async function main() {
           if (msg.from_openid === openid) return;
           let parsed;
           try { parsed = JSON.parse(msg.content || '{}'); } catch { parsed = { text: msg.content || '' }; }
-          log(`[ob:${openid.slice(0,6)}] rx action=${parsed.action||parsed.type} from=${msg.from_openid?.slice(0,8)} payload_h5id=${(parsed.h5_openid||'').slice(0,8)} expect=${h5openid.slice(0,8)}`);
-          // Only process messages meant for THIS user (by payload h5_openid)
+          // Resolve target user: try payload h5_openid as UUID, then as Board OB openid
           const payloadH5Id = parsed.h5_openid || '';
-          if (payloadH5Id !== h5openid) { log(`[ob:${openid.slice(0,6)}] SKIP — h5_openid mismatch`); return; }
+          let targetUser = users.get(payloadH5Id);
+          if (!targetUser) {
+            for (const [uid, e] of boardObs) {
+              if (e.openid === payloadH5Id) { targetUser = users.get(uid); break; }
+            }
+          }
+          // Fallback: use this listener's own user (payload may be empty or stale)
+          if (!targetUser) targetUser = users.get(h5openid);
+          if (!targetUser) return;
+          // Skip if this listener's user isn't the resolved target (another listener will handle)
+          if (targetUser !== users.get(h5openid)) return;
+
           const action = parsed.action || parsed.type;
-          if (!user) return;
 
           if (action === 'window-open') {
             const win = parsed.window || '';
             if (win) {
-              user.windows.set(win, { lastBeat: Date.now(), cwd: parsed.cwd || '', status: 'online' });
+              targetUser.windows.set(win, { lastBeat: Date.now(), cwd: parsed.cwd || '', status: 'online' });
               if (parsed.agent_openid) {
                 const peerName = parsed.agent_name || win;
-                user.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
-                user.windowAgents[win] = parsed.agent_openid;
-                sseBroadcastForUser(user, 'bound', { agent: peerName, openid: parsed.agent_openid });
+                targetUser.peers[peerName] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
+                targetUser.windowAgents[win] = parsed.agent_openid;
+                sseBroadcastForUser(targetUser, 'bound', { agent: peerName, openid: parsed.agent_openid });
               }
-              sseBroadcastForUser(user, 'windows', getWindows(user));
+              sseBroadcastForUser(targetUser, 'windows', getWindows(targetUser));
               log(`[ob] window + ${win}`);
             }
           } else if (action === 'heartbeat') {
             const win = parsed.window || '';
             const newName = parsed.newname;
-            if (newName && newName !== win && user.windows.has(win) && !user.windows.has(newName)) {
-              user.windows.set(newName, { ...user.windows.get(win), lastBeat: Date.now(), status: 'online' });
-              user.windows.delete(win);
-            } else if (user.windows.has(win)) {
-              user.windows.get(win).lastBeat = Date.now();
-              user.windows.get(win).status = 'online';
+            if (newName && newName !== win && targetUser.windows.has(win) && !targetUser.windows.has(newName)) {
+              targetUser.windows.set(newName, { ...targetUser.windows.get(win), lastBeat: Date.now(), status: 'online' });
+              targetUser.windows.delete(win);
+            } else if (targetUser.windows.has(win)) {
+              targetUser.windows.get(win).lastBeat = Date.now();
+              targetUser.windows.get(win).status = 'online';
             }
-            if (parsed.agent_openid && !user.windowAgents[win]) {
-              user.windowAgents[win] = parsed.agent_openid;
-              user.peers[win] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
+            if (parsed.agent_openid && !targetUser.windowAgents[win]) {
+              targetUser.windowAgents[win] = parsed.agent_openid;
+              targetUser.peers[win] = { openid: parsed.agent_openid, boundAt: new Date().toISOString() };
             }
           } else if (action === 'window-close') {
             const closeWin = parsed.window || '';
-            user.windows.delete(closeWin);
-            delete user.windowAgents[closeWin];
-            sseBroadcastForUser(user, 'windows', getWindows(user));
+            targetUser.windows.delete(closeWin);
+            delete targetUser.windowAgents[closeWin];
+            sseBroadcastForUser(targetUser, 'windows', getWindows(targetUser));
           } else if (action === 'message' || action === 'reply') {
             const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-            sseBroadcastForUser(user, 'message', {
+            sseBroadcastForUser(targetUser, 'message', {
               window: parsed.window || '', text: parsed.text || '',
               from: 'agent', time, msg_id: parsed.msg_id || '',
             });

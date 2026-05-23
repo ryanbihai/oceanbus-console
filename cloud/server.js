@@ -247,6 +247,11 @@ async function main() {
         });
       }
 
+      // ── API: Identity (SDK bootstrap) ───────────────────
+      if (req.method === "GET" && (url.pathname === "/identity" || url.pathname === "/api/identity")) {
+        return json(res, { openid: proxyId });
+      }
+
       // Static files don't need user context
       if (!user && !url.pathname.startsWith("/api/")) {
         serveStatic(req, res);

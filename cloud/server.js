@@ -67,6 +67,7 @@ function getUser(h5OpenId) {
       windows: new Map(),
       windowAgents: {},
       sse: new Set(),
+      pendingMessages: [], // buffer messages before SSE connects, replay on connect
     });
   }
   return users.get(h5OpenId);
@@ -153,6 +154,11 @@ async function main() {
           "Access-Control-Allow-Origin": "*",
         });
         res.write("event: connected\ndata: {}\n\n");
+        // Replay buffered messages (arrived before SSE was connected)
+        for (const m of user.pendingMessages) {
+          res.write(`event: message\ndata: ${JSON.stringify(m)}\n\n`);
+        }
+        user.pendingMessages = [];
         user.sse.add(res);
         req.on("close", () => user.sse.delete(res));
         return;
@@ -272,10 +278,16 @@ async function main() {
             sseBroadcastForUser(targetUser, 'windows', getWindows(targetUser));
           } else if (action === 'message' || action === 'reply') {
             const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
-            sseBroadcastForUser(targetUser, 'message', {
+            const msgData = {
               window: parsed.window || '', text: parsed.text || '',
               from: 'agent', time, msg_id: parsed.msg_id || '',
-            });
+            };
+            // Buffer if no SSE clients connected yet (e.g. welcome message before SSE ready)
+            if (targetUser.sse.size === 0) {
+              targetUser.pendingMessages.push(msgData);
+              if (targetUser.pendingMessages.length > 20) targetUser.pendingMessages.shift();
+            }
+            sseBroadcastForUser(targetUser, 'message', msgData);
           }
         });
 

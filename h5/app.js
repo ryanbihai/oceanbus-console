@@ -110,19 +110,23 @@ async function api(path, opts = {}) {
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
   myOpenId = await loadIdentity();
-  myBoardObId = await loadBoardObId();
   $("sidebar-id").textContent = "ID: " + myOpenId.slice(0, 12) + "...";
   loadPersistedMessages();
   document.body.classList.remove("chat-open");
-  console.log("H5 identity:", myOpenId.slice(0, 8) + "...", "OB:", myBoardObId.slice(0, 8) + "...");
+  console.log("H5 identity:", myOpenId.slice(0, 8) + "...");
 
-  // SSE with user context
+  // Connect SSE FIRST — so it's ready when OB messages arrive during boardObId loading
   sse = new EventSource(G + "/api/events?h5_openid=" + myOpenId);
   sse.addEventListener("connected", () => console.log("SSE connected"));
   sse.addEventListener("windows",  (e) => { windows = JSON.parse(e.data); renderWindows(); renderMain(); });
   sse.addEventListener("message",  (e) => onMsg(JSON.parse(e.data)));
   sse.addEventListener("bound",    (e) => { loadPeers(); toast("Agent 绑定成功!"); });
   sse.onerror = () => {}; // auto-reconnect
+
+  // NOW load Board OB address — may trigger OB listener creation + message delivery
+  // SSE is already connected, so welcome messages and window events will be received
+  myBoardObId = await loadBoardObId();
+  console.log("Board OB:", myBoardObId.slice(0, 8) + "...");
 
   await loadPeers();
   await loadWindows();

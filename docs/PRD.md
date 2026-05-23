@@ -502,7 +502,33 @@ CC AI 调用 ob_reply --text "你好！有什么可以帮你？"
                                                                   (Agent heartbeat 自动重注册)
 ```
 
-### 8.5 测试覆盖
+### 8.5 跨平台兼容性
+
+| 平台 | Shell | 进程管理 | 窗口名获取 | 状态 |
+|------|-------|---------|-----------|------|
+| **macOS** | bash（`hooks.json`） | POSIX（SIGTERM/SIGKILL） | `CLAUDE_CODE_SESSION_ID` + `cwd` | ✅ 兼容 |
+| **Linux** | bash（`hooks.json`） | POSIX（SIGTERM/SIGKILL） | `CLAUDE_CODE_SESSION_ID` + `cwd` | ✅ 兼容 |
+| **Windows (Git Bash)** | bash（`hooks.json`） | `taskkill /T /F` | `CLAUDE_CODE_SESSION_ID` + `cwd` | ✅ 兼容 |
+| **Windows (无 Git Bash)** | PowerShell（`hooks-pwsh.json`） | `taskkill /T /F` | `CLAUDE_CODE_SESSION_ID` + `cwd` | ✅ 兼容 |
+
+**Mac 特殊考虑**：
+- 深埋 `process.platform === 'win32'` 分支，非 Windows 全部走 POSIX 路径（`process.kill(pid, 0)` 探活、SIGTERM/SIGKILL 杀进程）
+- 无需 `darwin` 特定代码
+- bash 是 macOS 默认 shell，`hooks.json` 直接可用
+- `windowName()` 使用 `process.cwd()` 和 `CLAUDE_CODE_SESSION_ID`，跨平台一致
+
+### 8.6 消息格式说明
+
+Agent 发出两类消息，格式不同（分别服务不同消费者）：
+
+| 消费者 | 格式 | 示例 |
+|--------|------|------|
+| **CC AI（stdout JSON）** | `wechat_msg` 格式 | `{"type":"wechat_msg","chat_id":"h5","sender":"h5","text":"消息",...}` |
+| **Board 用户（SSE）** | 简化格式 | `{"window":"name","text":"消息","from":"agent","time":"14:30:00"}` |
+
+`wechat_msg` 格式是 wechat-cc 遗留格式，包含 `reply_style` 等扩展字段供 CC AI 解析。Board 只显示 `text`/`from`/`time`。两者目的不同，无需统一。
+
+### 8.7 测试覆盖
 
 完整的回归测试套件：`scripts/test-all.cjs`
 

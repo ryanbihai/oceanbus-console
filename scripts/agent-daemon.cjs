@@ -254,7 +254,7 @@ async function replyDaemon() {
   const boardOpenId = loadProjectPeer();
   if (!boardOpenId) { console.log('{"error":"no peer (pair first)"}'); process.exit(1); }
   const h5Id = loadProjectH5Id() || boardOpenId;
-  const oceanbus = await import('oceanbus');
+  const oceanbus = require('oceanbus');
   const ob = await oceanbus.createOceanBus({
     keyStore: { type: 'memory' },
     identity: { agent_id: creds.agent_id, api_key: creds.api_key, openid: creds.openid, encryption_key: creds.encryption_key },
@@ -415,7 +415,7 @@ async function main() {
   acquireLock(finalWin);
 
   // OB identity
-  const oceanbus = await import('oceanbus');
+  const oceanbus = require('oceanbus');
   let ob = await oceanbus.createOceanBus({ keyStore: { type: 'memory' } });
   let creds;
   const cPath = credsPath(finalWin);

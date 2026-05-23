@@ -37,10 +37,7 @@ async function loadIdentity() {
 }
 
 async function loadBoardObId() {
-  // Cloud's OB address for Agent pairing (--peer)
-  let obId = localStorage.getItem("ob-board-openid");
-  if (obId) return obId;
-
+  // Always fetch current Board OB address from Cloud (identity persists on disk)
   const uuid = localStorage.getItem("ob-h5-openid");
   if (!uuid) return '';
   try {
@@ -51,7 +48,8 @@ async function loadBoardObId() {
       return data.openid;
     }
   } catch {}
-  return '';
+  // Fallback to cached value if Cloud unreachable
+  return localStorage.getItem("ob-board-openid") || '';
 }
 
 // ── Messages ──────────────────────────────────────────────────

@@ -10,7 +10,8 @@ let sse = null;
 let activeWindow = null;
 let peers = {};    // { name: { openid, boundAt } }
 let windows = [];  // [{ name, status, cwd, lastBeat }]
-let myOpenId = ""; // this H5 user's identity
+let myOpenId = ""; // UUID for Cloud API calls (h5_openid)
+let myBoardObId = ""; // Board's real OB openid for Agent pairing (--peer)
 
 // ── Identity (UUID v4, stored in localStorage) ──────────────
 function generateUUID() {
@@ -26,17 +27,24 @@ function generateUUID() {
 }
 
 async function loadIdentity() {
-  // Use OB openid if already assigned
-  let openid = localStorage.getItem("ob-board-openid");
-  if (openid) return openid;
-
-  // First visit: bootstrap with UUID, then upgrade to OB openid from Cloud
+  // UUID for Cloud API calls — always use the stored UUID
   let uuid = localStorage.getItem("ob-h5-openid");
   if (!uuid) {
     uuid = generateUUID();
     localStorage.setItem("ob-h5-openid", uuid);
   }
+  return uuid;
+}
 
+async function loadBoardObId() {
+  // Board's real OB openid for Agent pairing
+  let obId = localStorage.getItem("ob-board-openid");
+  // Migration: old SHA256 hashes are 64 hex chars, real OB openids are not
+  if (obId && obId.length !== 64) return obId;
+
+  // Fetch (or re-fetch after migration) from Cloud
+  const uuid = localStorage.getItem("ob-h5-openid");
+  if (!uuid) return '';
   try {
     const res = await fetch(G + "/api/my-address?h5_openid=" + uuid);
     const data = await res.json();
@@ -44,9 +52,8 @@ async function loadIdentity() {
       localStorage.setItem("ob-board-openid", data.openid);
       return data.openid;
     }
-  } catch { /* Cloud unreachable, fall back to UUID */ }
-
-  return uuid;
+  } catch { /* Cloud unreachable, fall back */ }
+  return obId || '';
 }
 
 // ── Messages ──────────────────────────────────────────────────
@@ -107,10 +114,11 @@ async function api(path, opts = {}) {
 // ── Init ─────────────────────────────────────────────────────
 async function init() {
   myOpenId = await loadIdentity();
+  myBoardObId = await loadBoardObId();
   $("sidebar-id").textContent = "ID: " + myOpenId.slice(0, 12) + "...";
   loadPersistedMessages();
   document.body.classList.remove("chat-open");
-  console.log("H5 identity:", myOpenId.slice(0, 8) + "...");
+  console.log("H5 identity:", myOpenId.slice(0, 8) + "...", "OB:", myBoardObId.slice(0, 8) + "...");
 
   // SSE with user context
   sse = new EventSource(G + "/api/events?h5_openid=" + myOpenId);
@@ -286,14 +294,15 @@ function renderMain() {
 async function startPairing() {
   // Ensure identity is loaded (defensive: button may be clicked before init completes)
   if (!myOpenId) myOpenId = await loadIdentity();
+  if (!myBoardObId) myBoardObId = await loadBoardObId();
 
   $("pairing-modal").classList.remove("hidden");
   $("pairing-cmd").textContent = "加载中...";
 
   try {
     const gwUrl = window.location.origin;
-    // Save peer globally (for future auto-connect) and start with per-window identity
-    $("pairing-cmd").textContent = `mkdir -p ~/.oceanbus && echo '{"peer":"${myOpenId}"}' > ~/.oceanbus/console-peer.json && echo '{"url":"${gwUrl}"}' > ~/.oceanbus/console-gateway.json && npx oceanbus@latest start --peer ${myOpenId} --gateway-url ${gwUrl} --temp-identity`;
+    // --peer uses Board's real OB openid (myBoardObId), not the UUID
+    $("pairing-cmd").textContent = `mkdir -p ~/.oceanbus && echo '{"peer":"${myBoardObId}"}' > ~/.oceanbus/console-peer.json && echo '{"url":"${gwUrl}"}' > ~/.oceanbus/console-gateway.json && npx oceanbus@latest start --peer ${myBoardObId} --gateway-url ${gwUrl} --temp-identity`;
   } catch (e) {
     $("pairing-cmd").textContent = "加载失败";
     toast("获取身份失败");

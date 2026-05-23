@@ -27,7 +27,7 @@
           {
             "type": "command",
             "shell": "bash",
-            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; sleep 3; S=$(node \"$_P/scripts/agent-daemon.cjs\" status --json 2>/dev/null); echo \"$S\" | node -e \"const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); if(s.online){ console.log('OceanBus: '+s.window+' ● online | peer: '+s.peer+' | inbox: '+s.inbox); } else { console.log('OceanBus: offline — open H5 Board to pair'); }\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":false}'",
+            "command": "_P=\"${CLAUDE_PLUGIN_ROOT:-${PLUGIN_ROOT:-}}\"; sleep 3; S=$(node \"$_P/scripts/agent-daemon.cjs\" status --json 2>/dev/null); echo \"$S\" | node -e \"const s=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); if(s.online && s.peer==='bound'){ const hint = s.inbox > 0 ? ' | '+s.inbox+' new Board messages' : ''; console.log('OceanBus: '+s.window+' ● online'+hint); } else if(s.online){ console.log('OceanBus: '+s.window+' ● online | peer: unpaired — open H5 Board to pair'); } else { console.log('OceanBus: offline — open H5 Board to pair'); }\" 2>/dev/null; echo '{\"continue\":true,\"suppressOutput\":false}'",
             "timeout": 10
           }
         ]

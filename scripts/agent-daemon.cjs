@@ -32,6 +32,7 @@ if (subCmd === 'context')  { statusDaemon(); process.exit(0); }
 if (subCmd === 'inbox')    { inboxDaemon(); process.exit(0); }
 if (subCmd === 'ack')      { ackDaemon(); process.exit(0); }
 if (subCmd === 'reply')    { replyDaemon().then(() => process.exit(0)).catch(e => { console.log(JSON.stringify({error:e.message})); process.exit(1); }); /* async exit handled in promise */ }
+if (subCmd === 'inbox-monitor') { monitorInbox(); /* blocks forever */ }
 
 // ── Helpers ─────────────────────────────────────────────────
 function log(msg) { process.stderr.write(`[ob] ${msg}\n`); }
@@ -59,6 +60,8 @@ function lockPath(winName)   { return path.join(OCEANBUS_DIR, `agent-${slugify(w
 function projectPeerFile() { return path.join(process.cwd(), '.ob-console-peer.json'); }
 function globalPeerFile()  { return path.join(OCEANBUS_DIR, 'console-peer.json'); }
 function loadProjectPeer() { const d = loadJSON(projectPeerFile()) || loadJSON(globalPeerFile()); return d?.peer || ''; }
+function projectGatewayFile() { return path.join(process.cwd(), '.ob-console-gateway.json'); }
+function globalGatewayFile()  { return path.join(OCEANBUS_DIR, 'console-gateway.json'); }
 function loadProjectGateway() { const d = loadJSON(projectGatewayFile()) || loadJSON(globalGatewayFile()); return d?.url || ''; }
 
 // ── Subcommand helpers ──────────────────────────────────────
@@ -150,6 +153,57 @@ function ackDaemon() {
   if (fs.existsSync(ibPath)) { count = fs.readFileSync(ibPath, 'utf-8').split('\n').filter(l => l.trim()).length; fs.writeFileSync(ibPath, ''); }
   console.log(JSON.stringify({ ok: true, cleared: count }));
   log(`ack: cleared ${count} messages`);
+}
+
+// ── Inbox Monitor (real-time message stream for CC AI Monitor tool) ──
+function monitorInbox() {
+  const active = findActiveWindow();
+  if (!active) {
+    process.stdout.write(JSON.stringify({ type: 'error', text: 'no active daemon window found' }) + '\n');
+    process.exit(1);
+  }
+  const ibPath = inboxPath(active.name);
+  let lastSize = 0;
+  if (fs.existsSync(ibPath)) lastSize = fs.statSync(ibPath).size;
+
+  process.stdout.write(JSON.stringify({ type: 'ready', window: active.name, peer: loadProjectPeer() ? 'bound' : 'unpaired' }) + '\n');
+
+  const poll = setInterval(() => {
+    try {
+      if (!fs.existsSync(ibPath)) return;
+      const stat = fs.statSync(ibPath);
+      if (stat.size < lastSize) lastSize = 0; // file was truncated (e.g. inbox --clear)
+      if (stat.size <= lastSize) return;
+
+      const fd = fs.openSync(ibPath, 'r');
+      const buf = Buffer.alloc(stat.size - lastSize);
+      fs.readSync(fd, buf, 0, buf.length, lastSize);
+      fs.closeSync(fd);
+      lastSize = stat.size;
+
+      const lines = buf.toString('utf-8').split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        try {
+          const msg = JSON.parse(line);
+          process.stdout.write(JSON.stringify({
+            type: 'wechat_msg',
+            chat_id: 'h5',
+            sender: msg.sender || 'h5',
+            text: msg.text || '',
+            window: msg.window || active.name,
+            time: msg.time || new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            reply_style: 'detailed',
+          }) + '\n');
+        } catch {
+          process.stdout.write(JSON.stringify({ type: 'message', raw: line }) + '\n');
+        }
+      }
+    } catch { /* file temporarily unavailable, retry next interval */ }
+  }, 1000);
+
+  process.on('SIGINT', () => { clearInterval(poll); process.exit(0); });
+  process.on('SIGTERM', () => { clearInterval(poll); process.exit(0); });
+  setInterval(() => {}, 60_000).unref(); // keep process alive
 }
 
 // ── Reply ──────────────────────────────────────────────────
@@ -384,7 +438,8 @@ async function main() {
     const cur = windowName();
     ob.send(peerOpenId, JSON.stringify({
       action: 'heartbeat', window: finalWin,
-      newname: cur !== finalWin ? cur : undefined, h5_openid: peerOpenId,
+      newname: cur !== finalWin ? cur : undefined,
+      agent_openid: myAddr, h5_openid: peerOpenId,
     })).catch(() => {});
   }, 15_000) : null;
 

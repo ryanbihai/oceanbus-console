@@ -14,7 +14,7 @@
           {
             "type": "command",
             "shell": "powershell",
-            "command": "$P=$env:CLAUDE_PLUGIN_ROOT; if(-not $P){$P=$env:PLUGIN_ROOT}; Start-Sleep 3; $s=& node \"$P/scripts/agent-daemon.cjs\" status --json 2>$null | ConvertFrom-Json; if($s.online){Write-Host \"OceanBus: $($s.window) online | peer: $($s.peer) | inbox: $($s.inbox)\"}else{Write-Host 'OceanBus: offline'}; echo '{\"continue\":true,\"suppressOutput\":false}'",
+            "command": "$P=$env:CLAUDE_PLUGIN_ROOT; if(-not $P){$P=$env:PLUGIN_ROOT}; Start-Sleep 3; $s=& node \"$P/scripts/agent-daemon.cjs\" status --json 2>$null | ConvertFrom-Json; if($s.online -and $s.peer -eq 'bound'){ $hint = if($s.inbox -gt 0){\" | $($s.inbox) new Board messages\"}else{''}; Write-Host \"OceanBus: $($s.window) online$hint\" }elseif($s.online){Write-Host \"OceanBus: $($s.window) online | peer: unpaired — open H5 Board to pair\"}else{Write-Host 'OceanBus: offline — open H5 Board to pair'}; echo '{\"continue\":true,\"suppressOutput\":false}'",
             "timeout": 10
           }
         ]

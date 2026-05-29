@@ -2,7 +2,7 @@
   "name": "oceanbus-console",
   "version": "0.2.0",
   "description": "OceanBus Console — 远程 AI Agent 控制面板。SessionStart 自动启动 OB agent，H5 Board 实时通信。",
-  "author": "OceanBus",
+  "author": { "name": "OceanBus" },
   "license": "MIT",
   "keywords": ["oceanbus", "agent", "remote-control", "board", "p2p"],
   "requirements": {
